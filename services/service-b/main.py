@@ -166,7 +166,7 @@ async def get_item(item_id: int):
         span.set_attribute("item.found", True)
         span.set_attribute("item.name", item.name)
         span.set_attribute("item.price", item.price)
-        log.info("Item encontrado en DB", extra={"item_id": item_id, "name": item.name})
+        log.info("Item encontrado en DB", extra={"item_id": item_id, "item_name": item.name})
 
     # ── Custom span: enriquecimiento con datos externos (simulado) ───────────
     enrich_start = time.monotonic()
@@ -242,7 +242,7 @@ async def create_item(payload: ItemCreate):
             db.commit()
             db.refresh(new_item)
             span.set_attribute("item.id", new_item.id)
-            log.info("Item creado", extra={"item_id": new_item.id, "name": new_item.name})
+            log.info("Item creado", extra={"item_id": new_item.id, "item_name": new_item.name})
             return ItemResponse(
                 id=new_item.id,
                 name=new_item.name,
