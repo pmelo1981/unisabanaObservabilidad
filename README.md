@@ -328,7 +328,26 @@ done
 
 ---
 
-## 7. Estructura del Repositorio
+## 7. Evidencias Gráficas del Sistema en Vivo
+
+### 7.1 Trazas Distribuidas en Jaeger UI (Spans en Cascada)
+Trazas capturadas en vivo mostrando la propagación de contexto desde `service-a` hasta `service-b` y la base de datos PostgreSQL:
+
+![Jaeger UI Traces](docs/screenshots/jaeger-ui.png)
+
+### 7.2 Dashboard RED y SLIs en Grafana
+Métricas de rendimiento, tasas de error y tiempos de respuesta durante la prueba de carga:
+
+![Grafana Dashboard](docs/screenshots/grafana-dashboard.png)
+
+### 7.3 Interfaz Interactiva de Service A (Swagger UI)
+Validación de endpoints en vivo y emisión de respuestas con `trace_id` correlacionado:
+
+![Swagger UI](docs/screenshots/swagger-ui.png)
+
+---
+
+## 8. Estructura del Repositorio
 
 ```text
 otel-lab/
@@ -344,6 +363,9 @@ otel-lab/
 │   ├── otel-stack/               # Chart Helm (Collector, Jaeger, Prometheus, Grafana)
 │   ├── service-a/                # Chart Helm de Service A
 │   └── service-b/                # Chart Helm de Service B
+│
+├── docs/                         # Evidencias gráficas y documentación
+│   └── screenshots/              # Capturas reales de Jaeger, Grafana y Swagger
 │
 ├── otel-collector/               # Configuraciones del OTel Collector
 │   ├── config.yaml               # Pipeline OTLP -> Jaeger / Prometheus / Cloud Logging
@@ -364,7 +386,7 @@ otel-lab/
 
 ---
 
-## 8. Conclusiones
+## 9. Conclusiones
 
 1. **Independencia de Proveedor (No Vendor Lock-In):** OpenTelemetry desacopla por completo el código de la aplicación de los backends de observabilidad.
 2. **Trazabilidad Extremo a Extremo:** La propagación del estándar W3C TraceContext eliminó los puntos ciegos entre servicios y base de datos relacional.
