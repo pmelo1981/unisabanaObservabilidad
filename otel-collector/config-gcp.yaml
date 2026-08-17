@@ -1,0 +1,92 @@
+# ============================================================
+# OTel Collector — Configuracion GCP (GKE / Cloud Run)
+# ============================================================
+# Receivers:  OTLP gRPC (4317) + HTTP (4318)
+# Processors: memory_limiter → resource (cloud.provider=gcp) → batch
+# Exporters:
+#   trazas   → Jaeger (OTLP gRPC)
+#   metricas → Prometheus scrape endpoint + Google Cloud Monitoring
+#   logs     → Google Cloud Logging
+#
+# Variables de entorno requeridas:
+#   GCP_PROJECT_ID  — proyecto de GCP destino
+# ============================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  resource:
+    attributes:
+      - key: cloud.provider
+        value: "gcp"
+        action: upsert
+      - key: deployment.environment
+        value: "production"
+        action: upsert
+      - key: cloud.region
+        value: ${env:GCP_REGION}
+        action: upsert
+
+  batch:
+    timeout: 10s
+    send_batch_size: 2048
+    send_batch_max_size: 4096
+
+exporters:
+  # ── Trazas → Jaeger (desplegado en GKE) ──────────────────────
+  otlp/jaeger:
+    endpoint: jaeger-collector.observability.svc.cluster.local:4317
+    tls:
+      insecure: true
+
+  # ── Metricas → Prometheus scrape endpoint ─────────────────────
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # ── Metricas + Logs → Google Cloud ────────────────────────────
+  googlecloud:
+    project: ${env:GCP_PROJECT_ID}
+    log:
+      default_log_name: "projects/${env:GCP_PROJECT_ID}/logs/otel-services"
+      service_resource_labels:
+        - "service.name"
+        - "service.version"
+    metric:
+      prefix: "custom.googleapis.com/otel"
+      instrumentation_library_labels: true
+
+service:
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      address: 0.0.0.0:8888
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus, googlecloud]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [googlecloud]

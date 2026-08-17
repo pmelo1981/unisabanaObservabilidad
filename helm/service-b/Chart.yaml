@@ -1,0 +1,6 @@
+apiVersion: v2
+name: service-b
+description: Helm chart para Service B — Microservicio OTel Lab
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

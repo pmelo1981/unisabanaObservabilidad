@@ -1,0 +1,102 @@
+# Values para el OTel Stack en GKE
+# Instalar: helm dependency update ./helm/otel-stack && helm upgrade --install otel-stack ./helm/otel-stack -n observability
+
+# ── OTel Collector ────────────────────────────────────────────────────────────
+collector:
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.108.0"
+  
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Configmap con la configuracion del Collector (config-gcp.yaml)
+  configMapName: "otel-collector-config"
+
+  env:
+    GCP_PROJECT_ID: ""  # Rellenar con project ID
+    GCP_REGION: "us-central1"
+
+# ── Jaeger ─────────────────────────────────────────────────────────────────────
+jaeger:
+  enabled: true
+  provisionDataStore:
+    cassandra: false
+    elasticsearch: false
+    kafka: false
+  allInOne:
+    enabled: true
+    image:
+      tag: "1.60"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  storage:
+    type: memory
+  agent:
+    enabled: false
+  collector:
+    enabled: false
+  query:
+    enabled: false
+
+# ── Prometheus ─────────────────────────────────────────────────────────────────
+prometheus:
+  enabled: true
+  server:
+    retention: "7d"
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+  alertmanager:
+    enabled: false
+  pushgateway:
+    enabled: false
+  nodeExporter:
+    enabled: true
+  extraScrapeConfigs: |
+    - job_name: 'otel-collector'
+      static_configs:
+        - targets: ['otel-collector.observability.svc.cluster.local:8889']
+    - job_name: 'otel-collector-internal'
+      static_configs:
+        - targets: ['otel-collector.observability.svc.cluster.local:8888']
+
+# ── Grafana ────────────────────────────────────────────────────────────────────
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://otel-stack-prometheus-server.observability.svc.cluster.local
+          isDefault: true
+        - name: Jaeger
+          type: jaeger
+          url: http://otel-stack-jaeger-query.observability.svc.cluster.local:16686
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: "otel-lab"
+          folder: "OTel Lab"
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/otel-lab
+  dashboardsConfigMaps:
+    otel-lab: "grafana-dashboards"

@@ -1,0 +1,62 @@
+# Helm values para service-a
+# Override con: helm upgrade --install service-a ./helm/service-a -f custom-values.yaml
+
+replicaCount: 2
+
+image:
+  repository: ""  # ej: us-central1-docker.pkg.dev/mi-proyecto/otel-lab/service-a
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+env:
+  OTEL_SERVICE_NAME: "service-a"
+  OTEL_SERVICE_VERSION: "1.0.0"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
+  OTEL_SDK_DISABLED: "false"
+  SERVICE_B_URL: "http://service-b.services.svc.cluster.local:8001"
+  DEPLOYMENT_ENV: "production"
+  CLOUD_PROVIDER: "gcp"
+
+# Secret con DATABASE_URL (crear separado: kubectl create secret)
+databaseSecretName: "service-a-db-secret"
+databaseSecretKey: "DATABASE_URL"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+podAnnotations:
+  prometheus.io/scrape: "false"  # OTel Collector hace el scrape
+
+serviceAccount:
+  create: true
+  name: "service-a-sa"

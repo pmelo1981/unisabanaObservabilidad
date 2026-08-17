@@ -1,0 +1,58 @@
+# Helm values para service-b
+replicaCount: 2
+
+image:
+  repository: ""
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8001
+  targetPort: 8001
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+env:
+  OTEL_SERVICE_NAME: "service-b"
+  OTEL_SERVICE_VERSION: "1.0.0"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
+  OTEL_SDK_DISABLED: "false"
+  DEPLOYMENT_ENV: "production"
+  CLOUD_PROVIDER: "gcp"
+
+databaseSecretName: "service-b-db-secret"
+databaseSecretKey: "DATABASE_URL"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+podAnnotations:
+  prometheus.io/scrape: "false"
+
+serviceAccount:
+  create: true
+  name: "service-b-sa"

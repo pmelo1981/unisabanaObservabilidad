@@ -1,0 +1,16 @@
+setuptools<70.0.0
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.10
+pydantic==2.9.2
+
+# ── OpenTelemetry SDK ──────────────────────────────────────────────────────
+opentelemetry-api==1.27.0
+opentelemetry-sdk==1.27.0
+opentelemetry-exporter-otlp-proto-grpc==1.27.0
+
+# ── Auto-instrumentacion ───────────────────────────────────────────────────
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-instrumentation-sqlalchemy==0.48b0
+opentelemetry-instrumentation-logging==0.48b0

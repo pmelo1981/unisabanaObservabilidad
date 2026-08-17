@@ -1,0 +1,82 @@
+# ============================================================
+# OTel Collector — Configuracion Local (Docker Compose)
+# ============================================================
+# Receivers:  OTLP gRPC (4317) + HTTP (4318)
+# Processors: memory_limiter → resource → batch
+# Exporters:  Jaeger (trazas) | Prometheus (metricas) | debug (logs)
+# ============================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Limita el uso de memoria del Collector
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Enriquece recursos con metadatos de entorno
+  resource:
+    attributes:
+      - key: cloud.provider
+        value: "local"
+        action: upsert
+      - key: deployment.environment
+        value: "development"
+        action: upsert
+
+  # Agrega spans/metricas/logs en lotes para eficiencia
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # ── Trazas → Jaeger ──────────────────────────────────────────
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # ── Metricas → Prometheus (scrape endpoint) ───────────────────
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: true   # expone resource attributes como labels
+
+  # ── Logs → stdout (debug) ─────────────────────────────────────
+  debug:
+    verbosity: normal
+    sampling_initial: 2
+    sampling_thereafter: 500
+
+# ── Telemetria interna del Collector ──────────────────────────────
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888   # metricas del Collector en Prometheus
+
+  # ── Pipelines ─────────────────────────────────────────────────
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]

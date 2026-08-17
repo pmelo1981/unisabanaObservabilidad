@@ -1,0 +1,22 @@
+apiVersion: v2
+name: otel-stack
+description: Helm chart para el stack de observabilidad OTel (Collector + Jaeger + Prometheus + Grafana)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: jaeger
+    version: "3.0.0"
+    repository: "https://jaegertracing.github.io/helm-charts"
+    condition: jaeger.enabled
+
+  - name: prometheus
+    version: "25.27.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: prometheus.enabled
+
+  - name: grafana
+    version: "8.5.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: grafana.enabled

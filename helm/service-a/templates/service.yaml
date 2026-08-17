@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "service-a.fullname" . }}
+  namespace: services
+  labels:
+    app: service-a
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: service-a
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+---
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: services
+  annotations:
+    iam.gke.io/gcp-service-account: ""  # Rellenar con SA de GCP para Workload Identity
+{{- end }}
