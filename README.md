@@ -94,16 +94,16 @@ El sistema implementa de forma unificada los **tres pilares de la observabilidad
 | **Artifact Registry** | `us-central1-docker.pkg.dev/project-5a2d47d3-3365-4f97-a3a/otel-lab` | Activo |
 | **Base de Datos** | Cloud SQL PostgreSQL 16 (`otel-postgres`) | Activo |
 
-### 1.3 Matriz de Servicios, Puertos e IPs en Kubernetes
+### 1.3 Matriz de Servicios, Puertos e IPs Públicas (GCP LoadBalancer)
 
-| Namespace | Servicio | Tipo | ClusterIP | Puerto(s) Interno(s) | Función |
-|---|---|:---:|:---:|:---:|---|
-| `services` | `service-a` | ClusterIP | `10.52.1.244` | `8000/TCP` | API Gateway / Orquestador |
-| `services` | `service-b` | ClusterIP | `10.52.3.234` | `8001/TCP` | Catálogo de Inventario |
-| `observability` | `otel-collector` | ClusterIP | `10.52.10.55` | `4317` (gRPC), `4318` (HTTP), `8889` (Prometheus) | Agente Central OTel |
-| `observability` | `otel-stack-jaeger-query` | ClusterIP | — | `16686/TCP` | Interfaz Web de Jaeger |
-| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.7.36` | `80/TCP` | Backend de Métricas |
-| `observability` | `otel-stack-grafana` | ClusterIP | `10.52.1.12` | `80/TCP` | Dashboards de Visualización |
+| Namespace | Servicio | Tipo | IP / Endpoint Público | Puerto Interno | Función |
+|---|---|:---:|---|:---:|---|
+| `services` | `service-a` | LoadBalancer | **[http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
+| `services` | `service-b` | ClusterIP | `10.52.3.234` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
+| `observability` | `otel-stack-grafana` | LoadBalancer | **[http://34.44.185.170](http://34.44.185.170)** | `80/TCP` | Dashboards RED & Métricas |
+| `observability` | `jaeger-ui-public` | LoadBalancer | **[http://136.116.193.6:16686](http://136.116.193.6:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
+| `observability` | `otel-collector` | ClusterIP | `10.52.10.55` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
+| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.7.36` (Red Privada) | `80/TCP` | Backend de Métricas |
 
 ---
 
@@ -263,43 +263,66 @@ Se ejecutó una prueba de estrés de 5 minutos con **k6**, evaluando 50–100 us
 | **CPU Promedio por Pod** | 4.5 mCPU | 7.2 mCPU | **+2.7 mCPU** |
 | **Memoria RAM por Pod** | 70.2 MiB | 85.1 MiB | **+14.9 MiB (+21.2%)** |
 
-### 5.2 Análisis de Resultados
-* **Latencia:** El incremento de ~35 ms en p99 es mínimo e imperceptible para el usuario final, cumpliendo con holgura los lineamientos de Google SRE (< 15% de overhead tolerable).
-* **Memoria:** El aumento de ~15 MB responde a la memoria de búfer requerida por `BatchSpanProcessor` y `BatchLogRecordProcessor` para agrupar telemetría en segundo plano sin bloquear solicitudes de usuario.
-* **Trade-Off:** El costo de infraestructura es marginal comparado con la reducción del MTTR y la ganancia en resiliencia del sistema.
+### 5.3 Definición Formal de SLIs y SLOs del Sistema
+
+| Indicador / Métrica | SLI (Service Level Indicator) | SLO (Service Level Objective) | Medición Benchmark | Estado de Cumplimiento |
+|---|---|---|:---:|:---:|
+| **Disponibilidad** | Tasa de respuestas HTTP exitosas ($2xx/3xx$) | $\ge 99.5\%$ sobre ventana de 5 min | **100.0%** (0 errores) | ✅ **Cumplido** |
+| **Latencia Mediana (p50)** | Duración de request en percentil 50 | $\le 200\text{ ms}$ | **131.8 ms** | ✅ **Cumplido** |
+| **Latencia Degradada (p95)** | Duración de request en percentil 95 | $\le 500\text{ ms}$ | **350.5 ms** | ✅ **Cumplido** |
+| **Latencia Cola (p99)** | Duración de request en percentil 99 | $\le 1000\text{ ms}$ | **485.3 ms** | ✅ **Cumplido** |
+| **Throughput** | Capacidad sostenida a 100 VUs | $\ge 20\text{ req/s}$ | **21.8 req/s** | ✅ **Cumplido** |
+
+### 5.4 Consultas PromQL Implementadas en Grafana (Métricas RED)
+
+* **Throughput por Servicio (Request Rate):**
+  ```promql
+  sum(rate(http_server_request_duration_milliseconds_count{job="otel-services"}[1m])) by (service_name)
+  ```
+* **Latencia Percentil 99 (RED Duration):**
+  ```promql
+  histogram_quantile(0.99, sum(rate(http_server_request_duration_milliseconds_bucket[5m])) by (le, service_name))
+  ```
+* **Tasa de Error (% 5xx):**
+  ```promql
+  sum(rate(http_server_request_duration_milliseconds_count{http_status_code=~"5.."}[1m])) / sum(rate(http_server_request_duration_milliseconds_count[1m])) * 100
+  ```
+* **Duración de Operaciones en Base de Datos (Cloud SQL):**
+  ```promql
+  histogram_quantile(0.95, sum(rate(db_client_operation_duration_milliseconds_bucket[5m])) by (le, db_system))
+  ```
 
 ---
 
-## 6. Guía Operativa de Reproducción y Acceso
+## 6. Guía Operativa de Acceso y URLs Públicas
 
-### 6.1 Acceso Local a las Interfaces Web
-Para consultar los dashboards y trazas desde tu máquina local:
+### 6.1 Acceso Directo por Internet (GCP LoadBalancers)
+No requiere VPN ni comandos locales:
 
+* 🌐 **Service A (Swagger / API Docs):** [http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)
+* 🌐 **Grafana Server (Dashboards RED):** [http://34.44.185.170](http://34.44.185.170) *(User: `admin`, Password: `admin`)*
+* 🌐 **Jaeger UI (Trazas Distribuidas):** [http://136.116.193.6:16686](http://136.116.193.6:16686)
+
+### 6.2 Acceso Alternativo vía Port-Forward Local
 ```bash
 # 1. Obtener credenciales del clúster GKE
 gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-5a2d47d3-3365-4f97-a3a
 
-# 2. Port-forward de Service A (API)
+# 2. Port-forward de Service A
 kubectl port-forward service/service-a 8000:8000 -n services
 
 # 3. Port-forward de Jaeger UI
-kubectl port-forward service/otel-stack-jaeger-query 16686:16686 -n observability
+kubectl port-forward service/jaeger-ui-public 16686:16686 -n observability
 
 # 4. Port-forward de Grafana
 kubectl port-forward service/otel-stack-grafana 3000:80 -n observability
 ```
 
-### 6.2 URLs de Acceso Local
-* **Service A (Docs / Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Jaeger UI (Trazas Distribuidas):** [http://localhost:16686](http://localhost:16686)
-* **Grafana (Dashboards RED):** [http://localhost:3000](http://localhost:3000) *(Usuario: `admin`, Password: `admin` o secret de cluster)*
-* **Prometheus:** [http://localhost:9090](http://localhost:9090)
-
 ### 6.3 Generación de Trazas de Prueba
 ```bash
-# Generar 10 transacciones end-to-end
+# Generar 10 transacciones end-to-end contra la IP pública
 for i in {1..10}; do
-  curl -s "http://localhost:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
+  curl -s "http://136.115.138.169:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
 done
 ```
 
@@ -346,3 +369,4 @@ otel-lab/
 1. **Independencia de Proveedor (No Vendor Lock-In):** OpenTelemetry desacopla por completo el código de la aplicación de los backends de observabilidad.
 2. **Trazabilidad Extremo a Extremo:** La propagación del estándar W3C TraceContext eliminó los puntos ciegos entre servicios y base de datos relacional.
 3. **Costo Marginal Justificado:** El benchmark confirmó que el overhead de ~35 ms en latencia p99 y ~15 MB de RAM es totalmente asumible frente al valor operativo de contar con observabilidad unificada en tiempo real.
+
