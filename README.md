@@ -24,47 +24,63 @@ El sistema implementa de forma unificada los **tres pilares de la observabilidad
 
 ## 1. Arquitectura y Topología del Sistema
 
-### 1.1 Diagrama de Flujo y Componentes
-
-```mermaid
-flowchart TD
-    subgraph Cliente
-        K6[k6 Load Generator / Cliente HTTP]
-    end
-
-    subgraph "Google Kubernetes Engine (GKE Cluster: dev-otel-cluster)"
-        subgraph "Namespace: services"
-            SA["Service A (FastAPI)\nClusterIP: 10.52.1.244:8000"]
-            SB["Service B (FastAPI)\nClusterIP: 10.52.3.234:8001"]
-        end
-
-        subgraph "Namespace: observability"
-            Collector["OpenTelemetry Collector\nClusterIP: 10.52.10.55\n:4317 (gRPC) / :4318 (HTTP)"]
-            Jaeger["Jaeger Tracing Engine\n:16686 (UI) / :4317 (Collector)"]
-            Prom["Prometheus Server\nClusterIP: 10.52.7.36:80"]
-            Grafana["Grafana Server\nClusterIP: 10.52.1.12:80"]
-        end
-    end
-
-    subgraph "Google Cloud Platform (Managed Services)"
-        CloudSQL[("Cloud SQL PostgreSQL 16\notel_postgres_db")]
-        CloudLogging["GCP Cloud Logging\n(Logs JSON con trace_id)"]
-    end
-
-    K6 -->|HTTP GET /process/:id| SA
-    SA -->|HTTP + W3C TraceContext| SB
-    SA -->|SQLAlchemy Queries| CloudSQL
-    SB -->|SQLAlchemy Queries| CloudSQL
-
-    SA -.->|OTLP gRPC :4317| Collector
-    SB -.->|OTLP gRPC :4317| Collector
-
-    Collector -->|Trazas (gRPC)| Jaeger
-    Collector -->|Métricas (Scrape :8889)| Prom
-    Collector -->|Logs & Métricas| CloudLogging
-
-    Grafana -->|Consulta Métricas| Prom
-    Grafana -->|Visualiza Trazas| Jaeger
+```text
+                            ┌─────────────────────────────────────────┐
+                            │               Cliente / k6              │
+                            └────────────────────┬────────────────────┘
+                                                 │ HTTP Requests
+                                                 ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Google Kubernetes Engine (GKE Cluster: dev-otel-cluster | Control Plane: https://34.173.199.69)                   │
+│                                                                                                                  │
+│  ┌─ Namespace: services ──────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                                                            │  │
+│  │   ┌───────────────────────────────┐     HTTP + W3C TraceContext     ┌───────────────────────────────┐      │  │
+│  │   │  service-a (FastAPI)          │ ──────────────────────────────► │  service-b (FastAPI)          │      │  │
+│  │   │  ClusterIP: 10.52.1.244:8000  │                                 │  ClusterIP: 10.52.3.234:8001  │      │  │
+│  │   │  OTel SDK 1.27.0 (Python)     │                                 │  OTel SDK 1.27.0 (Python)     │      │  │
+│  │   └───────────────┬───────────────┘                                 └───────────────┬───────────────┘      │  │
+│  │                   │                                                                 │                      │  │
+│  └───────────────────┼─────────────────────────────────────────────────────────────────┼──────────────────────┘  │
+│                      │                                                                 │                         │
+│                      └────────────────────────┬────────────────────────────────────────┘                         │
+│                                               │ OTLP gRPC (:4317)                                                │
+│                                               ▼                                                                  │
+│  ┌─ Namespace: observability ─────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                                                            │  │
+│  │                                  ┌───────────────────────────────────┐                                     │  │
+│  │                                  │  OpenTelemetry Collector          │                                     │  │
+│  │                                  │  ClusterIP: 10.52.10.55           │                                     │  │
+│  │                                  │  Ports: 4317 / 4318 / 8889        │                                     │  │
+│  │                                  └─────────────────┬─────────────────┘                                     │  │
+│  │                                                    │                                                       │  │
+│  │                     ┌──────────────────────────────┼──────────────────────────────┐                        │  │
+│  │                     ▼ (Trazas)                     ▼ (Métricas)                   ▼ (Logs)                 │  │
+│  │           ┌───────────────────┐          ┌───────────────────┐          ┌───────────────────┐              │  │
+│  │           │  Jaeger Engine    │          │  Prometheus       │          │  GCP Cloud        │              │  │
+│  │           │  UI Port: 16686   │          │  ClusterIP:       │          │  Logging          │              │  │
+│  │           │  gRPC Port: 4317  │          │  10.52.7.36:80    │          │  (JSON estruct.)  │              │  │
+│  │           └─────────┬─────────┘          └─────────┬─────────┘          └───────────────────┘              │  │
+│  │                     │                              │                                                       │  │
+│  │                     │                              ▼                                                       │  │
+│  │                     │                    ┌───────────────────┐                                             │  │
+│  │                     │                    │  Grafana Server   │                                             │  │
+│  │                     │                    │  ClusterIP:       │                                             │  │
+│  │                     │                    │  10.52.1.12:80    │                                             │  │
+│  │                     │                    └─────────┬─────────┘                                             │  │
+│  │                     │                              │                                                       │  │
+│  │                     └──────────────────────────────┘                                                       │  │
+│  │                                     │                                                                      │  │
+│  │                                     ▼                                                                      │  │
+│  │                     ┌────────────────────────────────┐                                                     │  │
+│  │                     │ Visualización & Dashboards RED │                                                     │  │
+│  │                     └────────────────────────────────┘                                                     │  │
+│  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                                                  │
+│  ┌─ Managed Cloud SQL (GCP) ──────────────────────────────────────────────────────────────────────────────────┐  │
+│  │   PostgreSQL 16 Instance: otel-postgres | Private IP: Cloud SQL Network | db: otel_postgres_db            │  │
+│  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.2 Datos de Infraestructura Desplegada en GCP
@@ -178,8 +194,13 @@ service:
 
 ## 4. Correlación Cross-Signal (Métricas ➔ Trazas ➔ Logs)
 
-La correlación permite investigar fallas en segundos siguiendo la cadena:
-$$\text{Alerta de Métrica (Grafana)} \longrightarrow \text{Traza Distribuida (Jaeger)} \longrightarrow \text{Log Estructurado con trace\_id (Cloud Logging)}$$
+```text
+┌────────────────────────────────┐      ┌────────────────────────────────┐      ┌────────────────────────────────┐
+│      1. MÉTRICA / ALERTA       │ ───> │     2. TRAZA DISTRIBUIDA       │ ───> │      3. LOG ESTRUCTURADO       │
+│  Grafana: Latencia p99 supera  │      │  Jaeger: Span en cascada       │      │  JSON con trace_id idéntico    │
+│  umbral crítico (>1000ms)      │      │  service-a ➔ service-b ➔ SQL   │      │  Error y stacktrace exacto     │
+└────────────────────────────────┘      └────────────────────────────────┘      └────────────────────────────────┘
+```
 
 ### 4.1 Formateador JSON de Logs con Contexto OTel
 Implementado en [`services/service-a/otel_setup.py`](file:///c:/Users/pablo/OneDrive/Escritorio/PruebaGCPUniversidad/otel-lab/services/service-a/otel_setup.py):
