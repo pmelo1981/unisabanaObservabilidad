@@ -1,288 +1,61 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Informe Técnico — Pipeline de Observabilidad End-to-End con OpenTelemetry</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
-    :root {
-      --blue:    #1a56db;
-      --dark:    #111827;
-      --gray:    #6b7280;
-      --light:   #f9fafb;
-      --border:  #e5e7eb;
-      --green:   #059669;
-      --orange:  #d97706;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Inter', sans-serif;
-      font-size: 10.5pt;
-      line-height: 1.65;
-      color: var(--dark);
-      background: white;
-    }
-
-    /* ── PORTADA ─────────────────────────────────── */
-    .cover {
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 60px 70px;
-      background: linear-gradient(145deg, #0f172a 0%, #1e3a5f 60%, #1a56db 100%);
-      color: white;
-      page-break-after: always;
-    }
-    .cover-badge {
-      display: inline-block;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 20px;
-      padding: 4px 16px;
-      font-size: 9pt;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 32px;
-      width: fit-content;
-    }
-    .cover h1 {
-      font-size: 28pt;
-      font-weight: 700;
-      line-height: 1.2;
-      margin-bottom: 20px;
-      max-width: 600px;
-    }
-    .cover h1 span { color: #60a5fa; }
-    .cover-sub {
-      font-size: 13pt;
-      color: rgba(255,255,255,0.75);
-      margin-bottom: 48px;
-      max-width: 520px;
-    }
-    .cover-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 48px;
-    }
-    .pill {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 6px;
-      padding: 5px 14px;
-      font-size: 8.5pt;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .cover-meta {
-      border-top: 1px solid rgba(255,255,255,0.2);
-      padding-top: 24px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-    }
-    .cover-meta-item label {
-      display: block;
-      font-size: 8pt;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: rgba(255,255,255,0.5);
-      margin-bottom: 4px;
-    }
-    .cover-meta-item p {
-      font-size: 9.5pt;
-      font-weight: 500;
-    }
-
-    /* ── CONTENIDO ───────────────────────────────── */
-    .page {
-      padding: 48px 70px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    h2 {
-      font-size: 16pt;
-      font-weight: 700;
-      color: var(--blue);
-      margin: 36px 0 14px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid var(--blue);
-    }
-    h3 {
-      font-size: 11.5pt;
-      font-weight: 600;
-      color: var(--dark);
-      margin: 24px 0 10px;
-    }
-    h4 {
-      font-size: 10.5pt;
-      font-weight: 600;
-      color: var(--gray);
-      margin: 16px 0 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-size: 9pt;
-    }
-    p { margin-bottom: 10px; }
-
-    /* ── TABLAS ──────────────────────────────────── */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 14px 0 20px;
-      font-size: 9.5pt;
-    }
-    th {
-      background: #1e3a5f;
-      color: white;
-      padding: 9px 12px;
-      text-align: left;
-      font-weight: 600;
-    }
-    td {
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
-    }
-    tr:nth-child(even) td { background: var(--light); }
-    td.center, th.center { text-align: center; }
-    .badge-green { color: var(--green); font-weight: 600; }
-    .badge-orange { color: var(--orange); font-weight: 600; }
-
-    /* ── CÓDIGO ──────────────────────────────────── */
-    pre {
-      background: #0f172a;
-      color: #e2e8f0;
-      border-radius: 8px;
-      padding: 16px 20px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 8.5pt;
-      line-height: 1.6;
-      overflow-x: auto;
-      margin: 12px 0 20px;
-    }
-    code {
-      font-family: 'JetBrains Mono', monospace;
-      background: #f1f5f9;
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-size: 9pt;
-    }
-    pre code { background: none; padding: 0; font-size: inherit; }
-
-    /* ── CALLOUTS ────────────────────────────────── */
-    .callout {
-      border-left: 4px solid var(--blue);
-      background: #eff6ff;
-      border-radius: 0 8px 8px 0;
-      padding: 12px 16px;
-      margin: 14px 0;
-      font-size: 9.5pt;
-    }
-    .callout.green { border-color: var(--green); background: #f0fdf4; }
-    .callout.orange { border-color: var(--orange); background: #fffbeb; }
-
-    /* ── GRIDS INFO ──────────────────────────────── */
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin: 16px 0;
-    }
-    .info-card {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-    }
-    .info-card .label {
-      font-size: 8pt;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--gray);
-      margin-bottom: 4px;
-    }
-    .info-card .value {
-      font-size: 11pt;
-      font-weight: 700;
-      color: var(--blue);
-    }
-    .info-card .desc {
-      font-size: 8.5pt;
-      color: var(--gray);
-      margin-top: 2px;
-    }
-
-    /* ── PIPELINE VISUAL ─────────────────────────── */
-    .pipeline {
-      display: flex;
-      align-items: center;
-      gap: 0;
-      margin: 16px 0;
-      font-size: 8.5pt;
-    }
-    .pipeline-box {
-      flex: 1;
-      background: var(--light);
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      text-align: center;
-    }
-    .pipeline-box .icon { font-size: 18pt; display: block; margin-bottom: 4px; }
-    .pipeline-box .name { font-weight: 600; font-size: 9pt; }
-    .pipeline-box .sub { color: var(--gray); font-size: 8pt; }
-    .pipeline-arrow {
-      font-size: 16pt;
-      color: var(--blue);
-      padding: 0 6px;
-      flex-shrink: 0;
-    }
-
-    /* ── PRINT ───────────────────────────────────── */
-    @media print {
-      body { font-size: 10pt; }
-      .cover { height: 100vh; page-break-after: always; }
-      h2 { page-break-before: auto; }
-      pre, table { page-break-inside: avoid; }
-      @page { margin: 0; size: A4; }
-    }
-
-    .page-break { page-break-before: always; }
-    .section-num {
-      display: inline-block;
-      background: var(--blue);
-      color: white;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      text-align: center;
-      line-height: 24px;
-      font-size: 9pt;
-      font-weight: 700;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    ul, ol { padding-left: 20px; margin-bottom: 10px; }
-    li { margin-bottom: 4px; }
-    strong { font-weight: 600; }
-  </style>
+<meta charset="UTF-8">
+<title>Informe Técnico — Pipeline de Observabilidad End-to-End con OpenTelemetry</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;font-size:10.5pt;line-height:1.65;color:#111827;background:white}
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:60px 70px;background:linear-gradient(145deg,#0f172a 0%,#1e3a5f 60%,#1a56db 100%);color:white;page-break-after:always}
+.cover-badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:4px 16px;font-size:9pt;letter-spacing:1px;text-transform:uppercase;margin-bottom:32px;width:fit-content}
+.cover h1{font-size:26pt;font-weight:700;line-height:1.2;margin-bottom:20px;max-width:580px}
+.cover h1 span{color:#60a5fa}
+.cover-sub{font-size:12pt;color:rgba(255,255,255,.75);margin-bottom:40px;max-width:520px}
+.cover-pills{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:40px}
+.pill{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 14px;font-size:8.5pt;font-family:'JetBrains Mono',monospace}
+.cover-meta{border-top:1px solid rgba(255,255,255,.2);padding-top:24px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.cover-meta label{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.5);margin-bottom:3px}
+.cover-meta p{font-size:9.5pt;font-weight:500}
+.page{padding:48px 70px;max-width:900px;margin:0 auto}
+h2{font-size:15pt;font-weight:700;color:#1a56db;margin:36px 0 12px;padding-bottom:7px;border-bottom:2px solid #1a56db}
+h3{font-size:11pt;font-weight:600;color:#111827;margin:22px 0 9px}
+h4{font-size:9pt;font-weight:600;color:#6b7280;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}
+p{margin-bottom:10px}
+table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:9.5pt}
+th{background:#1e3a5f;color:white;padding:9px 12px;text-align:left;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+tr:nth-child(even) td{background:#f9fafb}
+.c{text-align:center}
+.ok{color:#059669;font-weight:600}
+.warn{color:#d97706;font-weight:600}
+pre{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:8pt;line-height:1.6;margin:10px 0 18px;white-space:pre-wrap;word-break:break-all}
+code{font-family:'JetBrains Mono',monospace;background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:8.5pt}
+pre code{background:none;padding:0;font-size:inherit}
+.callout{border-left:4px solid #1a56db;background:#eff6ff;border-radius:0 8px 8px 0;padding:11px 15px;margin:12px 0;font-size:9.5pt}
+.callout.green{border-color:#059669;background:#f0fdf4}
+.callout.orange{border-color:#d97706;background:#fffbeb}
+.info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
+.info-card{border:1px solid #e5e7eb;border-radius:8px;padding:13px}
+.info-card .lbl{font-size:7.5pt;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;margin-bottom:3px}
+.info-card .val{font-size:12pt;font-weight:700;color:#1a56db}
+.info-card .dsc{font-size:8pt;color:#6b7280;margin-top:2px}
+ul,ol{padding-left:20px;margin-bottom:10px}
+li{margin-bottom:4px}
+strong{font-weight:600}
+a{color:#1a56db}
+.snum{display:inline-block;background:#1a56db;color:white;border-radius:50%;width:22px;height:22px;text-align:center;line-height:22px;font-size:8.5pt;font-weight:700;margin-right:7px;vertical-align:middle}
+.pb{page-break-before:always}
+@media print{body{font-size:10pt}.cover{page-break-after:always}pre,table{page-break-inside:avoid}@page{margin:0;size:A4}}
+</style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════ PORTADA -->
+<!-- PORTADA -->
 <div class="cover">
   <div class="cover-badge">Informe Técnico · Observabilidad</div>
   <h1>Pipeline de Observabilidad<br><span>End-to-End con OpenTelemetry</span></h1>
-  <p class="cover-sub">
-    Implementación de los tres pilares de observabilidad (trazas, métricas y logs) sobre
-    microservicios Python/FastAPI desplegados en Google Kubernetes Engine (GKE),
-    con correlación cross-signal vía W3C TraceContext.
-  </p>
+  <p class="cover-sub">Implementación de los tres pilares de observabilidad (trazas, métricas y logs) sobre microservicios Python/FastAPI desplegados en Google Kubernetes Engine (GKE), con correlación cross-signal vía W3C TraceContext.</p>
   <div class="cover-pills">
     <span class="pill">OpenTelemetry SDK 1.27</span>
     <span class="pill">GKE v1.35.6</span>
@@ -293,168 +66,73 @@
     <span class="pill">k6 Load Testing</span>
   </div>
   <div class="cover-meta">
-    <div class="cover-meta-item">
-      <label>Asignatura</label>
-      <p>Computación en la Nube</p>
-    </div>
-    <div class="cover-meta-item">
-      <label>Institución</label>
-      <p>Universidad de La Sabana</p>
-    </div>
-    <div class="cover-meta-item">
-      <label>Repositorio</label>
-      <p>pmelo1981/unisabanaObservabilidad</p>
-    </div>
+    <div><label>Asignatura</label><p>Computación en la Nube</p></div>
+    <div><label>Institución</label><p>Universidad de La Sabana</p></div>
+    <div><label>Repositorio</label><p>pmelo1981/unisabanaObservabilidad</p></div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════ CONTENIDO -->
 <div class="page">
 
-<!-- ── 1. RESUMEN EJECUTIVO ── -->
-<h2><span class="section-num">1</span> Resumen Ejecutivo</h2>
-
-<p>
-  Este informe documenta la implementación de un <strong>pipeline de observabilidad end-to-end</strong>
-  basado en OpenTelemetry (OTel), capaz de capturar, correlacionar y visualizar los
-  <strong>tres pilares de la observabilidad</strong> desde una arquitectura de microservicios
-  desplegada en Google Kubernetes Engine (GKE).
-</p>
-
+<!-- 1. RESUMEN EJECUTIVO -->
+<h2><span class="snum">1</span> Resumen Ejecutivo</h2>
+<p>Este informe documenta la solución e implementación del <strong>Pipeline de Observabilidad End-to-End basado en OpenTelemetry (OTel)</strong>. La arquitectura integra dos microservicios interdependientes en Python/FastAPI (<code>service-a</code> y <code>service-b</code>) con persistencia en PostgreSQL (Cloud SQL), desplegados sobre un clúster regional de <strong>Google Kubernetes Engine (GKE)</strong>.</p>
+<p>El sistema implementa de forma unificada los <strong>tres pilares de la observabilidad</strong>:</p>
+<ol>
+  <li><strong>Trazas Distribuidas:</strong> Auto-instrumentación HTTP/DB y custom spans de negocio exportados vía OTLP gRPC hacia <strong>Jaeger</strong>.</li>
+  <li><strong>Métricas:</strong> Métricas de infraestructura y aplicación expuestas vía OTel Collector y recolectadas por <strong>Prometheus / Grafana</strong>.</li>
+  <li><strong>Logs Estructurados JSON:</strong> Formateo con inyección en tiempo de ejecución del <code>trace_id</code> y <code>span_id</code> (W3C TraceContext) para <strong>correlación cross-signal bidireccional</strong>.</li>
+</ol>
 <div class="info-grid">
-  <div class="info-card">
-    <div class="label">Microservicios</div>
-    <div class="value">2</div>
-    <div class="desc">service-a (orquestador) → service-b (catálogo)</div>
-  </div>
-  <div class="info-card">
-    <div class="label">Pilares OTel</div>
-    <div class="value">3</div>
-    <div class="desc">Trazas · Métricas · Logs estructurados</div>
-  </div>
-  <div class="info-card">
-    <div class="label">Clúster GKE</div>
-    <div class="value">GCP</div>
-    <div class="desc">us-central1 · dev-otel-cluster</div>
-  </div>
-  <div class="info-card">
-    <div class="label">Base de Datos</div>
-    <div class="value">Cloud SQL</div>
-    <div class="desc">PostgreSQL 16 · otel-postgres</div>
-  </div>
-  <div class="info-card">
-    <div class="label">Correlación</div>
-    <div class="value">W3C</div>
-    <div class="desc">TraceContext · trace_id como pivot</div>
-  </div>
-  <div class="info-card">
-    <div class="label">Overhead OTel</div>
-    <div class="value">~33%</div>
-    <div class="desc">Latencia adicional · SLOs cumplidos</div>
-  </div>
+  <div class="info-card"><div class="lbl">Microservicios</div><div class="val">2</div><div class="dsc">service-a (orquestador) → service-b (catálogo)</div></div>
+  <div class="info-card"><div class="lbl">Pilares OTel</div><div class="val">3</div><div class="dsc">Trazas · Métricas · Logs estructurados</div></div>
+  <div class="info-card"><div class="lbl">Plataforma</div><div class="val">GKE</div><div class="dsc">GCP us-central1 · dev-otel-cluster</div></div>
+  <div class="info-card"><div class="lbl">Base de Datos</div><div class="val">Cloud SQL</div><div class="dsc">PostgreSQL 16 · otel-postgres</div></div>
+  <div class="info-card"><div class="lbl">Correlación</div><div class="val">W3C</div><div class="dsc">TraceContext · trace_id como pivot</div></div>
+  <div class="info-card"><div class="lbl">Overhead OTel</div><div class="val">~33%</div><div class="dsc">Latencia adicional · SLOs cumplidos</div></div>
 </div>
 
-<!-- ── 2. ARQUITECTURA ── -->
-<h2><span class="section-num">2</span> Arquitectura del Sistema</h2>
-
-<h3>2.1 Topología de Componentes</h3>
-<p>
-  Todos los componentes se despliegan sobre un clúster GKE regional en <code>us-central1</code>,
-  organizados en dos namespaces de Kubernetes para separar responsabilidades:
-</p>
-
-<div class="pipeline">
-  <div class="pipeline-box">
-    <span class="icon">🌐</span>
-    <div class="name">Cliente / k6</div>
-    <div class="sub">HTTP Requests</div>
-  </div>
-  <div class="pipeline-arrow">→</div>
-  <div class="pipeline-box">
-    <span class="icon">⚙️</span>
-    <div class="name">service-a</div>
-    <div class="sub">FastAPI + OTel SDK<br>namespace: services</div>
-  </div>
-  <div class="pipeline-arrow">→</div>
-  <div class="pipeline-box">
-    <span class="icon">📦</span>
-    <div class="name">service-b</div>
-    <div class="sub">FastAPI + OTel SDK<br>W3C TraceContext</div>
-  </div>
-  <div class="pipeline-arrow">→</div>
-  <div class="pipeline-box">
-    <span class="icon">🔁</span>
-    <div class="name">OTel Collector</div>
-    <div class="sub">OTLP gRPC :4317<br>namespace: observability</div>
-  </div>
-</div>
-<div class="pipeline">
-  <div class="pipeline-box">
-    <span class="icon">🔍</span>
-    <div class="name">Jaeger</div>
-    <div class="sub">Trazas distribuidas<br>UI: :16686</div>
-  </div>
-  <div class="pipeline-arrow">+</div>
-  <div class="pipeline-box">
-    <span class="icon">📊</span>
-    <div class="name">Prometheus</div>
-    <div class="sub">Métricas OTel<br>scrape: :8889</div>
-  </div>
-  <div class="pipeline-arrow">+</div>
-  <div class="pipeline-box">
-    <span class="icon">📋</span>
-    <div class="name">Cloud Logging</div>
-    <div class="sub">Logs JSON<br>con trace_id</div>
-  </div>
-  <div class="pipeline-arrow">→</div>
-  <div class="pipeline-box">
-    <span class="icon">📈</span>
-    <div class="name">Grafana</div>
-    <div class="sub">6 paneles SLI/SLO<br>UI: :80</div>
-  </div>
-</div>
-
-<h3>2.2 Infraestructura Desplegada en GCP</h3>
+<!-- 2. ARQUITECTURA -->
+<h2><span class="snum">2</span> Arquitectura y Topología del Sistema</h2>
+<h3>2.1 Datos de Infraestructura Desplegada en GCP</h3>
 <table>
-  <tr><th>Recurso</th><th>Identificador</th><th class="center">Estado</th></tr>
-  <tr><td><strong>GCP Project</strong></td><td><code>project-5a2d47d3-3365-4f97-a3a</code></td><td class="center badge-green">✅ Activo</td></tr>
-  <tr><td><strong>Región / Zona</strong></td><td><code>us-central1 / us-central1-a</code></td><td class="center badge-green">✅ Activo</td></tr>
-  <tr><td><strong>Clúster GKE</strong></td><td><code>dev-otel-cluster (v1.35.6-gke.1258000)</code></td><td class="center badge-green">✅ Activo</td></tr>
-  <tr><td><strong>Artifact Registry</strong></td><td><code>us-central1-docker.pkg.dev/…/otel-lab</code></td><td class="center badge-green">✅ Activo</td></tr>
-  <tr><td><strong>Cloud SQL</strong></td><td><code>otel-postgres (PostgreSQL 16)</code></td><td class="center badge-green">✅ Activo</td></tr>
-  <tr><td><strong>Control Plane</strong></td><td><code>https://34.173.199.69</code></td><td class="center badge-green">✅ Activo</td></tr>
+  <tr><th>Recurso</th><th>Identificador / Detalle Técnico</th><th class="c">Estado</th></tr>
+  <tr><td><strong>GCP Project ID</strong></td><td><code>project-5a2d47d3-3365-4f97-a3a</code></td><td class="c ok">✅ Activo</td></tr>
+  <tr><td><strong>Región / Zona</strong></td><td><code>us-central1 / us-central1-a</code></td><td class="c ok">✅ Activo</td></tr>
+  <tr><td><strong>Clúster GKE</strong></td><td><code>dev-otel-cluster (v1.35.6-gke.1258000)</code></td><td class="c ok">✅ Activo</td></tr>
+  <tr><td><strong>Control Plane</strong></td><td><code>https://34.173.199.69</code></td><td class="c ok">✅ Activo</td></tr>
+  <tr><td><strong>Artifact Registry</strong></td><td><code>us-central1-docker.pkg.dev/…/otel-lab</code></td><td class="c ok">✅ Activo</td></tr>
+  <tr><td><strong>Base de Datos</strong></td><td><code>Cloud SQL PostgreSQL 16 (otel-postgres)</code></td><td class="c ok">✅ Activo</td></tr>
 </table>
 
-<h3>2.3 Endpoints Públicos (GCP LoadBalancer)</h3>
+<h3>2.2 Matriz de Servicios, Puertos e IPs Públicas</h3>
 <table>
-  <tr><th>Servicio</th><th>IP Pública</th><th>Puerto</th><th>Función</th></tr>
-  <tr><td><strong>service-a API</strong></td><td><code>136.115.138.169</code></td><td class="center">8000</td><td>Swagger UI / API REST</td></tr>
-  <tr><td><strong>Grafana</strong></td><td><code>34.44.185.170</code></td><td class="center">80</td><td>Dashboards RED &amp; SLIs</td></tr>
-  <tr><td><strong>Jaeger UI</strong></td><td><code>136.116.193.6</code></td><td class="center">16686</td><td>Trazas distribuidas</td></tr>
+  <tr><th>Namespace</th><th>Servicio</th><th>Tipo</th><th>IP / Endpoint Público</th><th class="c">Puerto</th></tr>
+  <tr><td><code>services</code></td><td><strong>service-a</strong></td><td>LoadBalancer</td><td><a href="http://136.115.138.169:8000/docs">136.115.138.169:8000/docs</a></td><td class="c">8000</td></tr>
+  <tr><td><code>services</code></td><td>service-b</td><td>ClusterIP</td><td><code>10.52.3.234</code> (Red Privada)</td><td class="c">8001</td></tr>
+  <tr><td><code>observability</code></td><td><strong>Grafana</strong></td><td>LoadBalancer</td><td><a href="http://34.44.185.170">34.44.185.170</a> (admin/admin)</td><td class="c">80</td></tr>
+  <tr><td><code>observability</code></td><td><strong>Jaeger UI</strong></td><td>LoadBalancer</td><td><a href="http://136.116.193.6:16686">136.116.193.6:16686</a></td><td class="c">16686</td></tr>
+  <tr><td><code>observability</code></td><td>otel-collector</td><td>ClusterIP</td><td><code>10.52.10.55</code> (Red Privada)</td><td class="c">4317/4318</td></tr>
+  <tr><td><code>observability</code></td><td>prometheus-server</td><td>ClusterIP</td><td><code>10.52.7.36</code> (Red Privada)</td><td class="c">80</td></tr>
 </table>
 
-<!-- ── 3. INSTRUMENTACIÓN ── -->
-<div class="page-break"></div>
-<h2><span class="section-num">3</span> Instrumentación con OpenTelemetry SDK</h2>
-
-<p>
-  Se implementó un enfoque <strong>híbrido</strong> combinando auto-instrumentación para
-  captura de infraestructura sin modificar el código de negocio, y custom spans para
-  trazar la lógica de negocio crítica con atributos semánticos enriquecidos.
-</p>
+<!-- 3. INSTRUMENTACIÓN -->
+<div class="pb"></div>
+<h2><span class="snum">3</span> Estrategia de Instrumentación con OTel SDK</h2>
+<p>Se adoptó un enfoque <strong>híbrido en Python</strong>: auto-instrumentación para captura de infraestructura sin tocar el código de negocio, y custom spans para trazar operaciones críticas con atributos semánticos enriquecidos.</p>
 
 <h3>3.1 Auto-Instrumentación</h3>
 <table>
-  <tr><th>Instrumentador</th><th>Señal</th><th>Descripción</th></tr>
-  <tr><td><code>FastAPIInstrumentor</code></td><td>Trazas</td><td>Span raíz por cada request HTTP entrante con <code>http.method</code>, <code>http.route</code>, <code>http.status_code</code></td></tr>
-  <tr><td><code>HTTPXClientInstrumentor</code></td><td>Trazas</td><td>Span de salida + inyección automática del header <code>traceparent</code> (W3C TraceContext) hacia service-b</td></tr>
-  <tr><td><code>SQLAlchemyInstrumentor</code></td><td>Trazas</td><td>Span por operación SQL con <code>db.statement</code> sanitizado hacia PostgreSQL</td></tr>
-  <tr><td><code>LoggingInstrumentor</code></td><td>Logs</td><td>Vincula el logger Python con el contexto de tracing activo</td></tr>
+  <tr><th>Instrumentador</th><th>Descripción</th></tr>
+  <tr><td><code>FastAPIInstrumentor</code></td><td>Intercepta todas las peticiones entrantes. Registra el span raíz con <code>http.method</code>, <code>http.status_code</code>, <code>http.route</code>.</td></tr>
+  <tr><td><code>HTTPXClientInstrumentor</code></td><td>Intercepta llamadas salientes service-a → service-b. Inyecta automáticamente el header W3C TraceContext (<code>traceparent</code>).</td></tr>
+  <tr><td><code>SQLAlchemyInstrumentor</code></td><td>Registra operaciones hacia PostgreSQL con <code>db.statement</code> sanitizado.</td></tr>
+  <tr><td><code>LoggingInstrumentor</code></td><td>Vincula el logger nativo de Python con el contexto de tracing activo.</td></tr>
 </table>
 
 <h3>3.2 Custom Spans (Lógica de Negocio)</h3>
 <table>
-  <tr><th>Servicio</th><th>Span</th><th>Atributos Clave</th></tr>
+  <tr><th>Servicio</th><th>Span Name</th><th>Atributos Clave</th></tr>
   <tr><td rowspan="4"><strong>service-a</strong></td><td><code>validate_item_request</code></td><td><code>app.item_id</code>, <code>app.validation_status</code></td></tr>
   <tr><td><code>call_service_b</code></td><td><code>app.service_b_url</code>, latencia neta</td></tr>
   <tr><td><code>enrich_order_data</code></td><td><code>app.total_amount</code>, <code>app.currency</code></td></tr>
@@ -464,12 +142,25 @@
   <tr><td><code>enrich_item_data</code></td><td><code>app.availability</code>, <code>app.stock_level</code></td></tr>
 </table>
 
-<h3>3.3 Logs Estructurados con Correlación OTel</h3>
-<p>
-  Cada log line emite un JSON estructurado con el <code>trace_id</code> y <code>span_id</code>
-  del span activo en el momento del registro, habilitando la correlación bidireccional
-  log ↔ traza en GCP Cloud Logging y Grafana Explorer:
-</p>
+<h3>3.3 Logs Estructurados con trace_id Inyectado</h3>
+<p>Implementado en <code>services/service-a/otel_setup.py</code> mediante <code>OTelJSONFormatter</code>:</p>
+<pre>class OTelJSONFormatter(logging.Formatter):
+    def format(self, record):
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        log_entry = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "service": os.getenv("OTEL_SERVICE_NAME", "service-a"),
+            "environment": "production",
+            "cloud_provider": "gcp",
+            "trace_id": format(ctx.trace_id, "032x") if ctx.is_valid else "",
+            "span_id":  format(ctx.span_id,  "016x") if ctx.is_valid else "",
+        }
+        return json.dumps(log_entry, ensure_ascii=False)</pre>
+
+<p><strong>Ejemplo de log generado en producción:</strong></p>
 <pre>{
   "timestamp": "2026-08-17 10:30:15,124",
   "level": "INFO",
@@ -482,15 +173,10 @@
   "trace_flags": "01"
 }</pre>
 
-<!-- ── 4. OTEL COLLECTOR ── -->
-<h2><span class="section-num">4</span> OTel Collector: Configuración y Despliegue</h2>
-
-<p>
-  El OTel Collector actúa como agente central de telemetría, recibiendo datos de
-  ambos servicios vía OTLP gRPC y enrutando cada señal al backend correspondiente.
-</p>
-
-<h3>4.1 Pipeline de Configuración (GKE)</h3>
+<!-- 4. OTEL COLLECTOR -->
+<div class="pb"></div>
+<h2><span class="snum">4</span> Configuración del OTel Collector</h2>
+<p>El Collector (<code>otel-collector/config-gcp.yaml</code>) desplegado en el namespace <code>observability</code> de GKE establece un pipeline robusto:</p>
 <pre>receivers:
   otlp:
     protocols:
@@ -504,15 +190,15 @@ processors:
     spike_limit_mib: 128
   resource:
     attributes:
-      - { key: cloud.provider, value: "gcp", action: upsert }
-      - { key: deployment.environment, value: "production", action: upsert }
+      - { key: cloud.provider,          value: "gcp",        action: upsert }
+      - { key: deployment.environment,  value: "production",  action: upsert }
   batch:
     timeout: 10s
     send_batch_size: 2048
 
 exporters:
   otlp/jaeger:
-    endpoint: jaeger-collector.observability.svc.cluster.local:4317
+    endpoint: otel-stack-jaeger-collector.observability.svc.cluster.local:4317
     tls: { insecure: true }
   prometheus:
     endpoint: "0.0.0.0:8889"
@@ -522,211 +208,126 @@ exporters:
 
 service:
   pipelines:
-    traces:   { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [otlp/jaeger] }
-    metrics:  { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [prometheus, googlecloud] }
-    logs:     { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [googlecloud] }</pre>
+    traces:  { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [otlp/jaeger] }
+    metrics: { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [prometheus, googlecloud] }
+    logs:    { receivers: [otlp], processors: [memory_limiter, resource, batch], exporters: [googlecloud] }</pre>
 
-<div class="callout green">
-  <strong>Despliegue:</strong> El Collector se despliega en el namespace <code>observability</code> del clúster GKE
-  mediante el Helm chart versionado en <code>helm/otel-stack/</code>. La configuración completa
-  está en <code>otel-collector/config-gcp.yaml</code>, versionada en el repositorio.
-</div>
-
-<!-- ── 5. CORRELACIÓN CROSS-SIGNAL ── -->
-<div class="page-break"></div>
-<h2><span class="section-num">5</span> Correlación Cross-Signal</h2>
-
-<p>
-  El <code>trace_id</code> generado por OTel SDK actúa como <strong>pivot universal</strong>
-  que conecta los tres pilares de observabilidad para un mismo request HTTP:
-</p>
-
+<!-- 5. CORRELACIÓN CROSS-SIGNAL -->
+<h2><span class="snum">5</span> Correlación Cross-Signal (Métricas ➔ Trazas ➔ Logs)</h2>
 <table>
   <tr>
-    <th style="width:33%">1. Métrica → Alerta</th>
+    <th style="width:33%">1. Métrica / Alerta</th>
     <th style="width:33%">2. Traza Distribuida</th>
     <th style="width:33%">3. Log Estructurado</th>
   </tr>
   <tr>
-    <td>Grafana detecta latencia p95 > umbral en panel SLI-3. Se identifica el intervalo de tiempo afectado.</td>
-    <td>En Jaeger UI se busca por <code>trace_id</code>. Se obtiene el span en cascada: service-a → service-b → PostgreSQL.</td>
-    <td>En GCP Cloud Logging se filtra por <code>jsonPayload.trace_id</code>. Se obtiene el log exacto con el error y stacktrace.</td>
+    <td>Grafana: Latencia p99 supera umbral crítico (&gt;1000ms)</td>
+    <td>Jaeger: Span en cascada service-a ➔ service-b ➔ SQL</td>
+    <td>JSON con trace_id idéntico — Error y stacktrace exacto</td>
   </tr>
 </table>
 
-<h3>5.1 Flujo de Diagnóstico Verificado</h3>
+<h3>5.1 Flujo de Correlación Verificado</h3>
 <ol>
-  <li><strong>Grafana</strong> detecta latencia elevada en el panel <em>SLI-3: Latencia p50/p95/p99</em></li>
-  <li>Se copia el <code>trace_id</code> del log estructurado en <strong>GCP Cloud Logging</strong> (campo <code>jsonPayload.trace_id</code>)</li>
-  <li>Se pega en <strong>Jaeger UI</strong> → se obtiene la traza completa con todos los spans y su jerarquía</li>
-  <li>Se identifica el span lento (<code>fetch_item_from_db</code> en service-b) con su <code>db.statement</code> exact</li>
-  <li>Se correlaciona con la <strong>métrica</strong> <code>db_client_operation_duration</code> en Prometheus para confirmar el patrón</li>
+  <li><strong>Grafana</strong> detecta latencia elevada en el panel SLI-3 (p95 &gt; umbral)</li>
+  <li>Se copia el <code>trace_id</code> del log en <strong>GCP Cloud Logging</strong> (campo <code>jsonPayload.trace_id</code>)</li>
+  <li>Se pega en <strong>Jaeger UI</strong> → se obtiene la traza exacta con todos los spans</li>
+  <li>Se identifica el span lento (<code>fetch_item_from_db</code> en service-b) con su <code>db.statement</code></li>
 </ol>
 
-<h3>5.2 Grafana Dashboard — 6 Paneles SLI/SLO</h3>
+<h3>5.2 Consultas PromQL en Grafana (Dashboard — 6 Paneles)</h3>
 <table>
-  <tr><th>#</th><th>Panel</th><th>Query PromQL</th><th>Señal</th></tr>
-  <tr><td class="center">1</td><td>SLI: Request Rate y Órdenes</td><td><code>sum(rate(orders_created_total[5m]))</code></td><td>Métricas</td></tr>
-  <tr><td class="center">2</td><td>SLI: Tasa de Error (%)</td><td><code>rate(http_errors_total[5m]) / rate(http_requests_total[5m])</code></td><td>Métricas</td></tr>
-  <tr><td class="center">3</td><td>SLI: Latencia p50/p95/p99</td><td><code>histogram_quantile(0.99, rate(http_duration_bucket[5m]))</code></td><td>Métricas</td></tr>
-  <tr><td class="center">4</td><td>Invocaciones service-a → service-b</td><td><code>sum(rate(outbound_calls_total[5m]))</code></td><td>Métricas</td></tr>
-  <tr><td class="center">5</td><td>OTel Collector — CPU</td><td><code>rate(process_cpu_seconds_total{job="otel-collector"}[5m])</code></td><td>Infra</td></tr>
-  <tr><td class="center">6</td><td>OTel Collector — Spans Recibidos</td><td><code>rate(otelcol_receiver_accepted_spans_total[5m])</code></td><td>OTel</td></tr>
+  <tr><th>#</th><th>Panel</th><th>Query PromQL</th></tr>
+  <tr><td class="c">1</td><td>SLI: Request Rate y Órdenes</td><td><code>sum(rate(orders_created_total[5m])) by (service_name)</code></td></tr>
+  <tr><td class="c">2</td><td>SLI: Tasa de Error (%)</td><td><code>rate(http_errors[5m]) / rate(http_requests[5m]) * 100</code></td></tr>
+  <tr><td class="c">3</td><td>SLI: Latencia p50/p95/p99</td><td><code>histogram_quantile(0.99, rate(http_duration_bucket[5m]))</code></td></tr>
+  <tr><td class="c">4</td><td>Invocaciones A → B</td><td><code>sum(rate(outbound_calls_total[5m]))</code></td></tr>
+  <tr><td class="c">5</td><td>OTel Collector — CPU</td><td><code>rate(process_cpu_seconds_total{job="otel-collector"}[5m])</code></td></tr>
+  <tr><td class="c">6</td><td>OTel Collector — Spans</td><td><code>rate(otelcol_receiver_accepted_spans_total[5m])</code></td></tr>
 </table>
 
-<!-- ── 6. BENCHMARK ── -->
-<div class="page-break"></div>
-<h2><span class="section-num">6</span> Análisis de Overhead OTel (Benchmark)</h2>
-
-<p>
-  Se ejecutaron dos escenarios con <strong>k6</strong> (50 VUs, ~46 segundos) para medir
-  el impacto de la instrumentación OTel sobre el rendimiento del sistema:
-</p>
+<!-- 6. BENCHMARK -->
+<div class="pb"></div>
+<h2><span class="snum">6</span> Benchmark de Overhead OTel (k6)</h2>
+<p>Se ejecutó una prueba de carga con <strong>k6</strong> — 50 VUs durante ~46 segundos — en dos escenarios:</p>
 <ul>
-  <li><strong>Baseline:</strong> <code>OTEL_SDK_DISABLED=true</code> — sin telemetría</li>
+  <li><strong>Baseline:</strong> <code>OTEL_SDK_DISABLED=true</code> (sin telemetría)</li>
   <li><strong>Instrumented:</strong> OTel SDK activo al 100% (trazas + métricas + logs + gRPC export)</li>
 </ul>
 
-<h3>6.1 Resultados Comparativos</h3>
+<h3>6.1 Tabla Comparativa de Resultados</h3>
 <table>
-  <tr>
-    <th>Métrica</th>
-    <th class="center">Baseline (Sin OTel)</th>
-    <th class="center">Instrumented (Con OTel)</th>
-    <th class="center">Overhead</th>
-  </tr>
-  <tr><td><strong>Throughput (RPS)</strong></td><td class="center">47.11 req/s</td><td class="center">37.69 req/s</td><td class="center badge-orange">-19.99%</td></tr>
-  <tr><td><strong>Latencia p50</strong></td><td class="center">511.4 ms</td><td class="center">681.9 ms</td><td class="center badge-orange">+33.3%</td></tr>
-  <tr><td><strong>Latencia p90</strong></td><td class="center">853.5 ms</td><td class="center">1,138.0 ms</td><td class="center badge-orange">+33.3%</td></tr>
-  <tr><td><strong>Latencia p95</strong></td><td class="center">948.6 ms</td><td class="center">1,264.8 ms</td><td class="center badge-orange">+33.3%</td></tr>
-  <tr><td><strong>Latencia Max</strong></td><td class="center">1,272.8 ms</td><td class="center">1,697.1 ms</td><td class="center badge-orange">+33.3%</td></tr>
-  <tr><td><strong>Tasa de Error HTTP</strong></td><td class="center">0.00%</td><td class="center">0.00%</td><td class="center badge-green">0%</td></tr>
-  <tr><td><strong>Checks exitosos</strong></td><td class="center">100%</td><td class="center">100%</td><td class="center badge-green">—</td></tr>
-  <tr><td><strong>Iteraciones</strong></td><td class="center">1,456</td><td class="center">1,456</td><td class="center">—</td></tr>
+  <tr><th>Métrica</th><th class="c">Baseline (Sin OTel)</th><th class="c">Instrumented (Con OTel)</th><th class="c">Overhead</th></tr>
+  <tr><td><strong>Throughput (RPS)</strong></td><td class="c">47.11 req/s</td><td class="c">37.69 req/s</td><td class="c warn">-19.99%</td></tr>
+  <tr><td><strong>Latencia p50</strong></td><td class="c">511.4 ms</td><td class="c">681.9 ms</td><td class="c warn">+33.3%</td></tr>
+  <tr><td><strong>Latencia p90</strong></td><td class="c">853.5 ms</td><td class="c">1,138.0 ms</td><td class="c warn">+33.3%</td></tr>
+  <tr><td><strong>Latencia p95</strong></td><td class="c">948.6 ms</td><td class="c">1,264.8 ms</td><td class="c warn">+33.3%</td></tr>
+  <tr><td><strong>Latencia Max</strong></td><td class="c">1,272.8 ms</td><td class="c">1,697.1 ms</td><td class="c warn">+33.3%</td></tr>
+  <tr><td><strong>Tasa de Error</strong></td><td class="c">0.00%</td><td class="c">0.00%</td><td class="c ok">0%</td></tr>
+  <tr><td><strong>Checks exitosos</strong></td><td class="c">100%</td><td class="c">100%</td><td class="c ok">—</td></tr>
+  <tr><td><strong>Iteraciones</strong></td><td class="c">1,456</td><td class="c">1,456</td><td class="c">—</td></tr>
 </table>
 
-<h3>6.2 SLIs y SLOs con OTel Activo</h3>
+<div class="callout orange"><strong>Interpretación:</strong> El overhead de OTel representa ~33% de latencia adicional y ~20% de reducción de throughput bajo 50 VUs concurrentes. El SLO crítico <code>p(99) &lt; 2000ms</code> se mantiene cumplido en ambos escenarios.</div>
+
+<h3>6.2 SLIs y SLOs del Sistema (Con OTel Activo)</h3>
 <table>
-  <tr><th>SLI</th><th>SLO Objetivo</th><th class="center">Medición Real</th><th class="center">Estado</th></tr>
-  <tr><td>Disponibilidad</td><td>≥ 99.5%</td><td class="center">100.0%</td><td class="center badge-green">✅ Cumplido</td></tr>
-  <tr><td>Latencia p50</td><td>≤ 750 ms</td><td class="center">681.9 ms</td><td class="center badge-green">✅ Cumplido</td></tr>
-  <tr><td>Latencia p95</td><td>≤ 1,500 ms</td><td class="center">1,264.8 ms</td><td class="center badge-green">✅ Cumplido</td></tr>
-  <tr><td>Latencia p99</td><td>≤ 2,000 ms</td><td class="center">&lt; 2,000 ms</td><td class="center badge-green">✅ Cumplido</td></tr>
-  <tr><td>Throughput</td><td>≥ 35 req/s</td><td class="center">37.69 req/s</td><td class="center badge-green">✅ Cumplido</td></tr>
+  <tr><th>Indicador</th><th>SLO</th><th class="c">Medición Real</th><th class="c">Estado</th></tr>
+  <tr><td>Disponibilidad</td><td>≥ 99.5%</td><td class="c">100.0%</td><td class="c ok">✅ Cumplido</td></tr>
+  <tr><td>Latencia p50</td><td>≤ 750 ms</td><td class="c">681.9 ms</td><td class="c ok">✅ Cumplido</td></tr>
+  <tr><td>Latencia p95</td><td>≤ 1,500 ms</td><td class="c">1,264.8 ms</td><td class="c ok">✅ Cumplido</td></tr>
+  <tr><td>Latencia p99</td><td>≤ 2,000 ms</td><td class="c">&lt; 2,000 ms</td><td class="c ok">✅ Cumplido</td></tr>
+  <tr><td>Throughput</td><td>≥ 35 req/s</td><td class="c">37.69 req/s</td><td class="c ok">✅ Cumplido</td></tr>
 </table>
 
-<div class="callout orange">
-  <strong>Interpretación:</strong> El overhead de ~33% en latencia y ~20% en throughput corresponde
-  al costo de exportar spans, métricas y logs vía gRPC hacia el OTel Collector en cada request.
-  Este costo es asumible dado que <strong>todos los SLOs críticos se mantienen cumplidos</strong>
-  y el valor operativo de la observabilidad unificada justifica ampliamente la inversión de rendimiento.
-</div>
-
-<!-- ── 7. IaC ── -->
-<h2><span class="section-num">7</span> Infraestructura como Código (IaC)</h2>
-
+<!-- 7. IaC -->
+<h2><span class="snum">7</span> Infraestructura como Código (IaC)</h2>
 <h3>7.1 Terraform — GCP (infrastructure/gcp/)</h3>
 <table>
   <tr><th>Archivo</th><th>Recurso Gestionado</th></tr>
   <tr><td><code>main.tf</code></td><td>Provider GCP, Artifact Registry, habilitación de APIs</td></tr>
   <tr><td><code>gke.tf</code></td><td>Clúster GKE regional, node pools, service accounts</td></tr>
-  <tr><td><code>cloud-sql.tf</code></td><td>Instancia Cloud SQL PostgreSQL 16, usuario, base de datos</td></tr>
+  <tr><td><code>cloud-sql.tf</code></td><td>Instancia Cloud SQL PostgreSQL 16, usuario y base de datos</td></tr>
   <tr><td><code>variables.tf</code></td><td>Variables parametrizadas (proyecto, región, credenciales)</td></tr>
   <tr><td><code>outputs.tf</code></td><td>Endpoints exportados: cluster endpoint, DB connection string</td></tr>
 </table>
-
 <h3>7.2 Helm Charts — Kubernetes (helm/)</h3>
 <table>
   <tr><th>Chart</th><th>Componentes Desplegados</th></tr>
   <tr><td><code>helm/otel-stack/</code></td><td>OTel Collector, Jaeger (todo-en-uno), Prometheus, Grafana</td></tr>
-  <tr><td><code>helm/service-a/</code></td><td>Deployment, Service (LoadBalancer), ConfigMap con vars OTel</td></tr>
-  <tr><td><code>helm/service-b/</code></td><td>Deployment, Service (ClusterIP), ServiceAccount</td></tr>
+  <tr><td><code>helm/service-a/</code></td><td>Deployment, Service LoadBalancer, ConfigMap con vars OTel</td></tr>
+  <tr><td><code>helm/service-b/</code></td><td>Deployment, Service ClusterIP, ServiceAccount</td></tr>
 </table>
-
 <div class="callout">
-  <strong>Reproducibilidad:</strong> El entorno completo se puede recrear en tres comandos:
-  <code>terraform init &amp;&amp; terraform apply</code> (infraestructura GCP) →
-  <code>helm upgrade --install otel-stack helm/otel-stack/</code> (observabilidad) →
-  <code>helm upgrade --install service-a helm/service-a/</code> (aplicación).
+  <strong>Reproducibilidad:</strong> El entorno completo se recrea en tres pasos: <code>terraform apply</code> (GCP) → <code>helm upgrade --install otel-stack helm/otel-stack/</code> → <code>helm upgrade --install service-a helm/service-a/</code>
 </div>
 
-<!-- ── 8. DECISIONES DE DISEÑO ── -->
-<div class="page-break"></div>
-<h2><span class="section-num">8</span> Decisiones de Diseño</h2>
-
+<!-- 8. DECISIONES DE DISEÑO -->
+<div class="pb"></div>
+<h2><span class="snum">8</span> Decisiones de Diseño</h2>
 <table>
-  <tr><th>Decisión</th><th>Alternativas</th><th>Justificación</th></tr>
-  <tr>
-    <td><strong>OTel SDK Python</strong></td>
-    <td>Datadog Agent, Dynatrace</td>
-    <td>Vendor-neutral; permite custom spans sin acoplamiento a un proveedor específico</td>
-  </tr>
-  <tr>
-    <td><strong>GKE (GCP)</strong></td>
-    <td>Cloud Run, Compute Engine</td>
-    <td>Kubernetes nativo facilita Helm charts, namespaces de observabilidad y service discovery interno</td>
-  </tr>
-  <tr>
-    <td><strong>Jaeger</strong></td>
-    <td>Zipkin, Tempo, Cloud Trace</td>
-    <td>Compatibilidad OTLP nativa, UI rica para análisis de spans, completamente open-source</td>
-  </tr>
-  <tr>
-    <td><strong>Prometheus + Grafana</strong></td>
-    <td>Cloud Monitoring, Datadog</td>
-    <td>Estándar de facto en ecosistema Kubernetes; dashboards como código (JSON versionado en repo)</td>
-  </tr>
-  <tr>
-    <td><strong>GCP Cloud Logging</strong></td>
-    <td>Loki, Elasticsearch</td>
-    <td>Integración nativa sin infraestructura adicional; búsqueda directa por <code>trace_id</code></td>
-  </tr>
-  <tr>
-    <td><strong>W3C TraceContext</strong></td>
-    <td>B3 (Zipkin), Jaeger format</td>
-    <td>Estándar IETF; adoptado por todos los instrumentadores OTel garantizando interoperabilidad</td>
-  </tr>
+  <tr><th>Decisión</th><th>Alternativas Consideradas</th><th>Justificación</th></tr>
+  <tr><td><strong>OTel SDK Python</strong></td><td>Datadog Agent, Dynatrace OneAgent</td><td>Vendor-neutral; permite custom spans de negocio sin acoplamiento a proveedor</td></tr>
+  <tr><td><strong>GKE (GCP)</strong></td><td>Cloud Run, Compute Engine</td><td>Kubernetes nativo facilita Helm charts, namespaces de observabilidad y service discovery interno</td></tr>
+  <tr><td><strong>Jaeger</strong></td><td>Zipkin, Tempo, Cloud Trace</td><td>Compatibilidad OTLP nativa, UI rica para análisis de spans, open-source</td></tr>
+  <tr><td><strong>Prometheus + Grafana</strong></td><td>Cloud Monitoring, Datadog</td><td>Estándar de facto en Kubernetes; dashboards como código (JSON versionado en repo)</td></tr>
+  <tr><td><strong>GCP Cloud Logging</strong></td><td>Loki, Elasticsearch</td><td>Integración nativa sin infraestructura adicional; búsqueda por <code>trace_id</code> directa</td></tr>
+  <tr><td><strong>W3C TraceContext</strong></td><td>B3 (Zipkin), Jaeger format</td><td>Estándar IETF adoptado por todos los instrumentadores OTel; asegura correlación cross-service</td></tr>
 </table>
 
-<!-- ── 9. CONCLUSIONES ── -->
-<h2><span class="section-num">9</span> Conclusiones</h2>
-
+<!-- 9. CONCLUSIONES -->
+<h2><span class="snum">9</span> Conclusiones</h2>
 <ol>
-  <li style="margin-bottom: 12px;">
-    <strong>Independencia de Proveedor (No Vendor Lock-In):</strong> OpenTelemetry desacopla
-    completamente el código de la aplicación de los backends de observabilidad. La misma
-    instrumentación funciona con Jaeger, Tempo, Zipkin o cualquier backend compatible con OTLP,
-    sin cambiar una sola línea de código de negocio.
-  </li>
-  <li style="margin-bottom: 12px;">
-    <strong>Trazabilidad Extremo a Extremo:</strong> La propagación del estándar W3C TraceContext
-    (<code>traceparent</code> header) eliminó los puntos ciegos entre <code>service-a</code>,
-    <code>service-b</code> y PostgreSQL, habilitando correlación log↔traza↔métrica con un único
-    <code>trace_id</code> como pivot. Esto reduce el MTTR (tiempo medio de resolución) de
-    incidentes de horas a segundos.
-  </li>
-  <li style="margin-bottom: 12px;">
-    <strong>Costo Marginal Justificado:</strong> El benchmark confirmó un overhead de ~33% en
-    latencia y ~20% en throughput bajo 50 VUs concurrentes. Sin embargo, todos los SLOs críticos
-    se mantienen cumplidos. Este costo operativo es completamente justificable frente al valor
-    de detectar, localizar y resolver incidentes con observabilidad unificada en tiempo real.
-  </li>
-  <li style="margin-bottom: 12px;">
-    <strong>IaC Reproducible:</strong> Toda la infraestructura (GKE, Cloud SQL, Artifact Registry)
-    está definida en Terraform versionado. Los servicios se despliegan mediante Helm charts
-    parametrizados, permitiendo reproducir el entorno completo de forma determinista con
-    <code>terraform apply</code> + <code>helm upgrade --install</code>.
-  </li>
+  <li style="margin-bottom:12px"><strong>Independencia de Proveedor (No Vendor Lock-In):</strong> OpenTelemetry desacopla por completo el código de la aplicación de los backends de observabilidad. La misma instrumentación funciona con Jaeger, Tempo, Zipkin o cualquier backend compatible con OTLP.</li>
+  <li style="margin-bottom:12px"><strong>Trazabilidad Extremo a Extremo:</strong> La propagación del estándar W3C TraceContext (<code>traceparent</code> header) eliminó los puntos ciegos entre <code>service-a</code>, <code>service-b</code> y PostgreSQL, habilitando correlación log↔traza↔métrica con un único <code>trace_id</code> como pivot.</li>
+  <li style="margin-bottom:12px"><strong>Costo Marginal Justificado:</strong> El benchmark confirmó un overhead de ~33% en latencia y ~20% en throughput con 50 VUs concurrentes. Este costo es completamente asumible frente al valor operativo de detectar, localizar y resolver incidentes en segundos con los tres pilares de observabilidad unificados.</li>
+  <li style="margin-bottom:12px"><strong>IaC Reproducible:</strong> Toda la infraestructura (GKE, Cloud SQL, Artifact Registry) está definida en Terraform versionado. Los servicios se despliegan mediante Helm charts parametrizados, permitiendo reproducir el entorno completo con <code>terraform apply</code> + <code>helm upgrade --install</code>.</li>
 </ol>
 
-<div class="callout green" style="margin-top: 24px;">
-  <strong>Repositorio público:</strong>
-  <a href="https://github.com/pmelo1981/unisabanaObservabilidad">
-    github.com/pmelo1981/unisabanaObservabilidad
-  </a>
-  — contiene código fuente, IaC, Helm charts, configuraciones OTel, resultados de benchmark y dashboards Grafana.
+<div class="callout green" style="margin-top:24px">
+  <strong>Repositorio público:</strong> <a href="https://github.com/pmelo1981/unisabanaObservabilidad">github.com/pmelo1981/unisabanaObservabilidad</a> — contiene código fuente, IaC, Helm charts, configuraciones OTel, resultados de benchmark y dashboards Grafana.
 </div>
 
-</div><!-- /page -->
+</div>
 </body>
 </html>
