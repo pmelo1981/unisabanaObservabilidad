@@ -53,3 +53,7 @@ benchmark/results/*.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation build intermediates
+docs/*.docx
+docs/*.html
