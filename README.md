@@ -275,10 +275,10 @@ Resultados obtenidos ejecutando k6 con **50 VUs durante ~46 segundos** en dos co
 | Indicador / Métrica | SLI (Service Level Indicator) | SLO (Service Level Objective) | Medición Benchmark | Estado de Cumplimiento |
 |---|---|---|:---:|:---:|
 | **Disponibilidad** | Tasa de respuestas HTTP exitosas ($2xx/3xx$) | $\ge 99.5\%$ sobre ventana de 5 min | **100.0%** (0 errores) | ✅ **Cumplido** |
-| **Latencia Mediana (p50)** | Duración de request en percentil 50 | $\le 200\text{ ms}$ | **131.8 ms** | ✅ **Cumplido** |
-| **Latencia Degradada (p95)** | Duración de request en percentil 95 | $\le 500\text{ ms}$ | **350.5 ms** | ✅ **Cumplido** |
-| **Latencia Cola (p99)** | Duración de request en percentil 99 | $\le 1000\text{ ms}$ | **485.3 ms** | ✅ **Cumplido** |
-| **Throughput** | Capacidad sostenida a 100 VUs | $\ge 20\text{ req/s}$ | **21.8 req/s** | ✅ **Cumplido** |
+| **Latencia Mediana (p50)** | Duración de request en percentil 50 | $\le 750\text{ ms}$ | **681.9 ms** | ✅ **Cumplido** |
+| **Latencia Degradada (p95)** | Duración de request en percentil 95 | $\le 1500\text{ ms}$ | **1,264.8 ms** | ✅ **Cumplido** |
+| **Latencia Cola (p99)** | Duración de request en percentil 99 | $\le 2000\text{ ms}$ | **< 2,000 ms** | ✅ **Cumplido** |
+| **Throughput** | Capacidad sostenida a 50 VUs | $\ge 35\text{ req/s}$ | **37.69 req/s** | ✅ **Cumplido** |
 
 ### 5.4 Consultas PromQL Implementadas en Grafana (Métricas RED)
 
@@ -429,8 +429,8 @@ otel-lab/
 | Decisión | Alternativas Consideradas | Justificación |
 |---|---|---|
 | **OTel SDK Python** sobre auto-agent | Datadog Agent, Dynatrace OneAgent | SDK OTel es vendor-neutral; permite custom spans de negocio sin acoplamiento |
-| **GKE (GCP)** para despliegue | ECS Fargate (AWS) | Kubernetes nativo facilita Helm charts, namespaces de observabilidad y service discovery interno |
-| **Jaeger** para trazas | Zipkin, AWS X-Ray, Tempo | Compatibilidad OTLP nativa, UI rica para análisis de spans, open-source |
+| **GKE (GCP)** para despliegue | Cloud Run, Compute Engine | Kubernetes nativo facilita Helm charts, namespaces de observabilidad y service discovery interno |
+| **Jaeger** para trazas | Zipkin, Tempo, Cloud Trace | Compatibilidad OTLP nativa, UI rica para análisis de spans, open-source |
 | **Prometheus + Grafana** para métricas | Cloud Monitoring, Datadog | Estándar de facto en ecosistema Kubernetes; dashboards como código (JSON versionado) |
 | **GCP Cloud Logging** para logs | Loki, Elasticsearch | Integración nativa sin infraestructura adicional; búsqueda por `trace_id` directa |
 | **W3C TraceContext** | B3 (Zipkin), Jaeger propagation | Estándar IETF adoptado por todos los instrumentadores OTel; asegura correlación cross-service |
