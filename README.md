@@ -8,6 +8,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-v2.54-E6522C?logo=prometheus)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-v11.2-F46800?logo=grafana)](https://grafana.com/)
 [![k6](https://img.shields.io/badge/k6-v0.53.0-7D64FF?logo=k6)](https://k6.io/)
+[![Informe Técnico](https://img.shields.io/badge/Informe%20T%C3%A9cnico-PDF-red?logo=adobeacrobatreader)](docs/INFORME_TECNICO.pdf)
 
 ---
 
@@ -19,6 +20,8 @@ El sistema implementa de forma unificada los **tres pilares de la observabilidad
 1. **Trazas Distribuidas:** Auto-instrumentación HTTP/DB y *custom spans* de negocio exportados vía OTLP gRPC hacia **Jaeger**.
 2. **Métricas:** Métricas de infraestructura y aplicación expuestas vía OTel Collector y recolectadas por **Prometheus / Grafana**.
 3. **Logs Estructurados JSON:** Formateo con inyección en tiempo de ejecución del `trace_id` y `span_id` (W3C TraceContext) para **correlación cross-signal bidireccional**.
+
+> 📄 **Documento de Entrega Formal:** El informe técnico completo y consolidado se encuentra disponible en [`docs/INFORME_TECNICO.pdf`](docs/INFORME_TECNICO.pdf).
 
 ---
 
@@ -395,7 +398,8 @@ otel-lab/
 │   ├── service-a/                # Chart Helm de Service A
 │   └── service-b/                # Chart Helm de Service B
 │
-├── docs/                         # Evidencias gráficas y documentación
+├── docs/                         # Documentación y evidencias
+│   ├── INFORME_TECNICO.pdf       # Informe técnico formal del proyecto (PDF)
 │   └── screenshots/              # Capturas reales de Jaeger, Grafana y Swagger
 │       ├── jaeger-ui.png         # Vista general de trazas distribuidas
 │       ├── jaeger-trace-detail.png # Detalle de span con correlación cross-signal
