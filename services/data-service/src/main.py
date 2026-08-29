@@ -1,86 +1,189 @@
+"""
+data-service — tercer microservicio: acceso a datos multi-cloud.
+
+Expone el mismo recurso "records" respaldado por dos bases de datos
+PostgreSQL independientes (GCP Cloud SQL y AWS RDS/simulado), instrumentado
+con OTel SDK completo (trazas, metricas, logs) y OTel DB Semantic
+Conventions en cada operacion de base de datos.
+
+Endpoints:
+  GET  /health              -> estado del servicio y de cada backend de DB
+  GET  /gcp/records         -> lista registros desde Cloud SQL (GCP)
+  POST /gcp/records         -> crea un registro en Cloud SQL (GCP)
+  GET  /aws/records         -> lista registros desde el backend AWS RDS
+  POST /aws/records         -> crea un registro en el backend AWS RDS
+  GET  /records             -> vista federada: agrega ambos backends en un
+                               unico trace, demostrando la topologia
+                               multi-cloud dentro de una sola peticion
+"""
+import logging
 import os
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List
+import time
+from contextlib import asynccontextmanager
+
 import asyncpg
-
-# OpenTelemetry imports
-from opentelemetry import trace, metrics, logs
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from fastapi import FastAPI, HTTPException
+from opentelemetry import trace
 from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.sdk.logs import LoggerProvider
-from opentelemetry.sdk.logs.export import BatchLogRecordProcessor
-from opentelemetry.exporter.otlp.proto.grpc.logs_exporter import OTLPLogExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from pydantic import BaseModel
 
-# Resource describing this service
-resource = Resource.create({
-    "service.name": "data-service",
-    "service.version": "0.1.0",
-    "deployment.environment": os.getenv("ENVIRONMENT", "dev"),
-})
+from database import DbRegistry, db_span
+from otel_setup import get_meter, get_tracer, setup_telemetry
 
-# Tracing setup
-trace.set_tracer_provider(TracerProvider(resource=resource))
-tracer = trace.get_tracer(__name__)
-otlp_exporter = OTLPSpanExporter(endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"), insecure=True)
-span_processor = BatchSpanProcessor(otlp_exporter)
-trace.get_tracer_provider().add_span_processor(span_processor)
+setup_telemetry()
 
-# Metrics setup
-metric_exporter = OTLPMetricExporter(endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"), insecure=True)
-metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=5000)
-metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
-
-# Logging setup
-log_exporter = OTLPLogExporter(endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"), insecure=True)
-logger_provider = LoggerProvider(resource=resource)
-logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
-logs.set_logger_provider(logger_provider)
-
-# Instrument asyncpg (PostgreSQL driver)
+# Auto-instrumentacion de asyncpg: genera automaticamente db.system,
+# db.statement, db.name, server.address/port por cada query (OTel DB
+# Semantic Conventions) sobre TODAS las conexiones abiertas despues de esto.
 AsyncPGInstrumentor().instrument()
 
-app = FastAPI(title="Data Service", version="0.1.0")
+log = logging.getLogger(__name__)
+tracer = get_tracer()
+meter = get_meter()
+
+db_registry = DbRegistry()
+db_registry.register("gcp", os.getenv("CLOUD_SQL_DSN"))
+db_registry.register("aws", os.getenv("AWS_RDS_DSN"))
+
+# ── Metricas de negocio ────────────────────────────────────────────────────
+records_created = meter.create_counter(
+    name="data_service.records.created",
+    description="Total de registros creados, por proveedor de base de datos",
+    unit="1",
+)
+db_query_duration = meter.create_histogram(
+    name="data_service.db.query.duration",
+    description="Duracion de operaciones de base de datos por proveedor",
+    unit="ms",
+)
+db_errors = meter.create_counter(
+    name="data_service.db.errors",
+    description="Errores de base de datos por proveedor",
+    unit="1",
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not db_registry.available_providers():
+        log.warning("data-service iniciando sin ningun backend de DB configurado")
+    await db_registry.connect_all()
+    log.info("data-service listo", extra={"db_providers": db_registry.available_providers()})
+    yield
+    await db_registry.close_all()
+    log.info("data-service finalizando")
+
+
+app = FastAPI(
+    title="Data Service",
+    description="Acceso multi-cloud a datos (GCP Cloud SQL + AWS RDS) con OTel SDK completo",
+    version="0.2.0",
+    lifespan=lifespan,
+)
 FastAPIInstrumentor().instrument_app(app)
 
-# Database connection settings (use env variables)
-CLOUD_SQL_DSN = os.getenv("CLOUD_SQL_DSN")  # e.g. postgresql://user:pass@host:5432/dbname
 
 class Record(BaseModel):
     id: int
     data: str
+    created_at: str
 
-async def get_connection(dsn: str):
-    return await asyncpg.connect(dsn)
 
-@app.get("/records", response_model=List[Record])
-async def list_records():
-    """Retrieve records from Cloud SQL database."""
-    dsn = CLOUD_SQL_DSN
-    if not dsn:
-        raise HTTPException(status_code=500, detail="DSN not configured for Cloud SQL")
-    conn = await get_connection(dsn)
+class RecordCreate(BaseModel):
+    data: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    db_backends: dict[str, str]
+
+
+async def _list_records(provider: str) -> list[Record]:
+    target = db_registry.get(provider)
+    start = time.monotonic()
     try:
-        rows = await conn.fetch("SELECT id, data FROM records")
-        return [Record(id=row["id"], data=row["data"]) for row in rows]
-    finally:
-        await conn.close()
+        async with db_span(tracer, target, "select", "records"):
+            async with target.pool.acquire() as conn:
+                rows = await conn.fetch("SELECT id, data, created_at FROM records ORDER BY id DESC LIMIT 50")
+        db_query_duration.record((time.monotonic() - start) * 1000, {"provider": provider, "operation": "select"})
+        return [Record(id=r["id"], data=r["data"], created_at=r["created_at"].isoformat()) for r in rows]
+    except (asyncpg.PostgresError, OSError) as exc:
+        db_errors.add(1, {"provider": provider, "operation": "select"})
+        log.error("Fallo consultando records", extra={"provider": provider, "error": str(exc)})
+        raise HTTPException(status_code=503, detail=f"Backend {provider} no disponible") from exc
 
-@app.post("/records", response_model=Record)
-async def create_record(record: Record):
-    dsn = CLOUD_SQL_DSN
-    if not dsn:
-        raise HTTPException(status_code=500, detail="DSN not configured for Cloud SQL")
-    conn = await get_connection(dsn)
+
+async def _create_record(provider: str, payload: RecordCreate) -> Record:
+    target = db_registry.get(provider)
+    start = time.monotonic()
     try:
-        await conn.execute("INSERT INTO records (id, data) VALUES ($1, $2)", record.id, record.data)
-        return record
-    finally:
-        await conn.close()
+        async with db_span(tracer, target, "insert", "records") as span:
+            span.set_attribute("app.record.data_length", len(payload.data))
+            async with target.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "INSERT INTO records (data) VALUES ($1) RETURNING id, data, created_at",
+                    payload.data,
+                )
+        db_query_duration.record((time.monotonic() - start) * 1000, {"provider": provider, "operation": "insert"})
+        records_created.add(1, {"provider": provider})
+        log.info("Registro creado", extra={"provider": provider, "record_id": row["id"]})
+        return Record(id=row["id"], data=row["data"], created_at=row["created_at"].isoformat())
+    except (asyncpg.PostgresError, OSError) as exc:
+        db_errors.add(1, {"provider": provider, "operation": "insert"})
+        log.error("Fallo creando record", extra={"provider": provider, "error": str(exc)})
+        raise HTTPException(status_code=503, detail=f"Backend {provider} no disponible") from exc
+
+
+@app.get("/health", response_model=HealthResponse, tags=["Infraestructura"])
+async def health():
+    backends = {}
+    for provider in ("gcp", "aws"):
+        if provider not in db_registry.available_providers():
+            backends[provider] = "not_configured"
+            continue
+        try:
+            target = db_registry.get(provider)
+            async with target.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            backends[provider] = "ok"
+        except Exception:
+            backends[provider] = "unreachable"
+    return HealthResponse(status="ok", service="data-service", db_backends=backends)
+
+
+@app.get("/gcp/records", response_model=list[Record], tags=["GCP Cloud SQL"])
+async def list_gcp_records():
+    """Registros desde GCP Cloud SQL (PostgreSQL)."""
+    return await _list_records("gcp")
+
+
+@app.post("/gcp/records", response_model=Record, tags=["GCP Cloud SQL"])
+async def create_gcp_record(payload: RecordCreate):
+    return await _create_record("gcp", payload)
+
+
+@app.get("/aws/records", response_model=list[Record], tags=["AWS RDS"])
+async def list_aws_records():
+    """Registros desde el backend AWS RDS (en este despliegue, simulado dentro de GKE)."""
+    return await _list_records("aws")
+
+
+@app.post("/aws/records", response_model=Record, tags=["AWS RDS"])
+async def create_aws_record(payload: RecordCreate):
+    return await _create_record("aws", payload)
+
+
+@app.get("/records", tags=["Federado"])
+async def list_federated_records():
+    """
+    Vista federada: consulta ambos backends dentro de la misma traza,
+    demostrando la topologia multi-cloud (GCP + AWS) en un solo request.
+    """
+    with tracer.start_as_current_span("federated_records_query") as span:
+        span.set_attribute("app.providers_queried", db_registry.available_providers())
+        result = {}
+        for provider in db_registry.available_providers():
+            result[provider] = await _list_records(provider)
+        return result
