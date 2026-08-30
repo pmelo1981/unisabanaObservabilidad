@@ -4,9 +4,18 @@ metadata:
   name: istio-control-plane
   namespace: istio-system
 spec:
-  profile: default
+  profile: demo
   meshConfig:
     accessLogFile: "/dev/stdout"
+    # Extension provider: le da a los sidecars Envoy un backend OTLP para
+    # exportar las trazas L7 que generan (independientes de las trazas de
+    # aplicacion emitidas por el SDK OTel de cada servicio). Referenciado
+    # por mesh/telemetry.yaml (Telemetry.spec.tracing.providers).
+    extensionProviders:
+      - name: otel-collector
+        opentelemetry:
+          service: otel-collector.observability.svc.cluster.local
+          port: 4317
   components:
     ingressGateways:
       - name: istio-ingressgateway

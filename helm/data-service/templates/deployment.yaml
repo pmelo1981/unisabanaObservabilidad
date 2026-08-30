@@ -35,8 +35,18 @@ spec:
                 secretKeyRef:
                   name: data-service-db-credentials
                   key: aws_rds_dsn
+            - name: OTEL_SERVICE_NAME
+              value: "data-service"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "{{ .Values.otlp.endpoint | default "otel-collector:4317" }}"
+            - name: DEPLOYMENT_ENV
+              value: {{ .Values.deploymentEnv | default "production" | quote }}
+            - name: CLOUD_PROVIDER
+              value: "gcp"
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

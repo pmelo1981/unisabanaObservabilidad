@@ -9,6 +9,30 @@ service:
   type: ClusterIP
   port: 8080
 
+otlp:
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"
+
+deploymentEnv: "production"
+
+# DSN de GCP Cloud SQL (obligatorio, provisto en el despliegue real via
+# --set-string db.cloudSqlDsn=... o desde Secret Manager). aws_rds_dsn, si
+# se deja vacio, apunta automaticamente al rds-sim de este mismo chart.
+db:
+  cloudSqlDsn: ""
+  awsRdsDsn: ""
+
+# Base de datos "AWS RDS" simulada dentro del cluster GKE (ver
+# templates/rds-sim.yaml). Este despliegue es exclusivamente GCP; el
+# backend "aws" es un Postgres en el mismo cluster que hace ese rol.
+rdsSim:
+  enabled: true
+  database: labdb
+  user: postgres
+  password: postgres
+  persistence:
+    enabled: false
+    size: 1Gi
+
 resources:
   limits:
     cpu: 200m
@@ -16,6 +40,20 @@ resources:
   requests:
     cpu: 100m
     memory: 128Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
 
 nodeSelector: {}
 

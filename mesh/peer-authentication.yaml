@@ -1,0 +1,13 @@
+# mTLS estricto para todo el mesh: todo trafico L7 entre pods con sidecar
+# queda cifrado y autenticado por identidad de servicio (SPIFFE), sin cambiar
+# una linea de codigo de las aplicaciones. Istio observa cada conexion a
+# nivel L7 independientemente de este ajuste; STRICT ademas asegura que no se
+# aceptan conexiones en texto plano dentro del mesh.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
