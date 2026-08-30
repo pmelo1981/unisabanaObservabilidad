@@ -1,0 +1,37 @@
+# Gestion de trafico L7 para data-service: reintentos automaticos ante
+# errores transitorios de los backends de base de datos y timeout de
+# circuito, visibles como eventos en las trazas del sidecar Envoy.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: data-service
+  namespace: data-service
+spec:
+  host: data-service.data-service.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: data-service
+  namespace: data-service
+spec:
+  hosts:
+    - data-service.data-service.svc.cluster.local
+  http:
+    - retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,connect-failure,reset
+      timeout: 10s
+      route:
+        - destination:
+            host: data-service.data-service.svc.cluster.local

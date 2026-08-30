@@ -1,0 +1,19 @@
+# El namespace "observability" (OTel Collector, Jaeger, Prometheus, Grafana)
+# se deja fuera de la inyeccion de sidecars a proposito: es infraestructura
+# de observabilidad, no logica de negocio, y no necesita malla de servicio.
+# Con el mTLS STRICT mesh-wide (mesh/peer-authentication.yaml), los pods CON
+# sidecar (service-a, service-b, data-service) intentan originar mTLS hacia
+# cualquier destino salvo que se les diga explicitamente lo contrario. Sin
+# esta excepcion, el envio OTLP hacia el Collector falla silenciosamente
+# (el SDK reporta export exitoso porque el sidecar local acepta el stream,
+# pero el salto real hacia el Collector -sin sidecar que termine TLS- nunca
+# se completa). PERMISSIVE aqui le permite al Collector aceptar tanto
+# conexiones en texto plano como mTLS, sin exponer el resto del mesh.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: allow-plaintext-observability
+  namespace: observability
+spec:
+  mtls:
+    mode: PERMISSIVE
