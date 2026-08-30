@@ -8,20 +8,25 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-v2.54-E6522C?logo=prometheus)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-v11.2-F46800?logo=grafana)](https://grafana.com/)
 [![k6](https://img.shields.io/badge/k6-v0.53.0-7D64FF?logo=k6)](https://k6.io/)
+[![Istio](https://img.shields.io/badge/Istio-1.23-466BB0?logo=istio)](https://istio.io/)
 [![Informe Técnico](https://img.shields.io/badge/Informe%20T%C3%A9cnico-PDF-red?logo=adobeacrobatreader)](docs/INFORME_TECNICO.pdf)
 
 ---
 
 ## 📌 Resumen Ejecutivo
 
-Este repositorio contiene la solución e informe técnico del **Pipeline de Observabilidad End-to-End basado en OpenTelemetry (OTel)**. La arquitectura integra dos microservicios interdependientes en Python/FastAPI (`service-a` y `service-b`) con persistencia en PostgreSQL (Cloud SQL), desplegados sobre un clúster regional de **Google Kubernetes Engine (GKE)**.
+Este repositorio contiene la solución e informe técnico del **Pipeline de Observabilidad End-to-End basado en OpenTelemetry (OTel)**. La arquitectura integra **tres microservicios** en Python/FastAPI — `service-a` (orquestador de órdenes), `service-b` (catálogo de inventario) y `data-service` (acceso a datos multi-cloud) — con persistencia en PostgreSQL, desplegados sobre un clúster regional de **Google Kubernetes Engine (GKE)** con un **service mesh Istio** para observabilidad de red L7.
 
 El sistema implementa de forma unificada los **tres pilares de la observabilidad**:
-1. **Trazas Distribuidas:** Auto-instrumentación HTTP/DB y *custom spans* de negocio exportados vía OTLP gRPC hacia **Jaeger**.
+1. **Trazas Distribuidas:** Auto-instrumentación HTTP/DB y *custom spans* de negocio exportados vía OTLP gRPC hacia **Jaeger**, incluyendo **OTel DB Semantic Conventions** (`db.system`, `db.operation`, `db.sql.table`, `server.address`) en cada operación de base de datos.
 2. **Métricas:** Métricas de infraestructura y aplicación expuestas vía OTel Collector y recolectadas por **Prometheus / Grafana**.
 3. **Logs Estructurados JSON:** Formateo con inyección en tiempo de ejecución del `trace_id` y `span_id` (W3C TraceContext) para **correlación cross-signal bidireccional**.
 
+Adicionalmente, `data-service` accede a **dos backends PostgreSQL independientes** (GCP Cloud SQL y AWS RDS) y todo el tráfico este-oeste entre los tres servicios queda cifrado con **mTLS STRICT** vía Istio, sin cambios en el código de aplicación.
+
 > 📄 **Documento de Entrega Formal:** El informe técnico completo y consolidado se encuentra disponible en [`docs/INFORME_TECNICO.pdf`](docs/INFORME_TECNICO.pdf).
+>
+> ⚠️ **Nota de alcance:** este despliegue es exclusivamente **GCP** (no hay cuenta AWS activa). El backend "AWS RDS" de `data-service` se simula con un Postgres dentro del mismo clúster GKE (ver [§9](#9-tercer-microservicio-data-service-arquitectura-multi-cloud)); el código y la instrumentación OTel son idénticos a los que se usarían contra una instancia RDS real. `data-service` y el service mesh fueron validados funcionalmente en un clúster **kind** local con Istio real (ver [§10](#10-service-mesh-istio---observabilidad-de-red-l7)) y están listos para desplegarse en el mismo GKE que ya aloja `service-a`/`service-b`.
 
 ---
 
@@ -103,6 +108,7 @@ El sistema implementa de forma unificada los **tres pilares de la observabilidad
 |---|---|:---:|---|:---:|---|
 | `services` | `service-a` | LoadBalancer | **[http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
 | `services` | `service-b` | ClusterIP | `10.52.3.234` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
+| `data-service` | `data-service` | ClusterIP | *(pendiente de desplegar, ver §9)* | `8080/TCP` | Acceso a datos multi-cloud (GCP Cloud SQL + AWS RDS) |
 | `observability` | `otel-stack-grafana` | LoadBalancer | **[http://34.44.185.170](http://34.44.185.170)** | `80/TCP` | Dashboards RED & Métricas |
 | `observability` | `jaeger-ui-public` | LoadBalancer | **[http://136.116.193.6:16686](http://136.116.193.6:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
 | `observability` | `otel-collector` | ClusterIP | `10.52.10.55` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
@@ -378,11 +384,24 @@ otel-lab/
 │   │   ├── otel_setup.py         # Configuración OTel: trazas, métricas y logs
 │   │   ├── database.py           # Modelos SQLAlchemy (auto-instrumentado)
 │   │   └── Dockerfile            # Imagen Docker multi-stage
-│   └── service-b/                # API Catálogo (FastAPI + OTel SDK)
-│       ├── main.py               # Endpoints + custom spans de inventario
-│       ├── otel_setup.py         # Configuración OTel idéntica
-│       ├── database.py           # Modelos SQLAlchemy
-│       └── Dockerfile
+│   ├── service-b/                # API Catálogo (FastAPI + OTel SDK)
+│   │   ├── main.py               # Endpoints + custom spans de inventario
+│   │   ├── otel_setup.py         # Configuración OTel idéntica
+│   │   ├── database.py           # Modelos SQLAlchemy
+│   │   └── Dockerfile
+│   └── data-service/             # Acceso a datos multi-cloud (GCP + AWS)
+│       └── src/
+│           ├── main.py           # Endpoints /gcp, /aws y vista federada
+│           ├── database.py       # Pools duales + db_span() (DB semconv)
+│           └── otel_setup.py     # Configuración OTel (3 pilares)
+│
+├── mesh/                         # Service Mesh (Istio) — observabilidad L7
+│   ├── istio-operator.yaml       # Control plane + extension provider OTLP
+│   ├── namespaces.yaml           # Namespaces con istio-injection
+│   ├── peer-authentication.yaml  # mTLS STRICT mesh-wide
+│   ├── peer-authentication-observability.yaml  # Excepcion PERMISSIVE
+│   ├── telemetry.yaml            # Sampling de trazas L7 + access logging
+│   └── data-service-traffic.yaml # VirtualService/DestinationRule
 │
 ├── infrastructure/               # Infraestructura como Código (IaC)
 │   └── gcp/                      # Terraform (GKE, Cloud SQL, VPC, Artifact Registry)
@@ -396,7 +415,8 @@ otel-lab/
 ├── helm/                         # Manifiestos de orquestación Kubernetes
 │   ├── otel-stack/               # Chart Helm (Collector, Jaeger, Prometheus, Grafana)
 │   ├── service-a/                # Chart Helm de Service A
-│   └── service-b/                # Chart Helm de Service B
+│   ├── service-b/                # Chart Helm de Service B
+│   └── data-service/             # Chart Helm de Data Service (+ rds-sim.yaml)
 │
 ├── docs/                         # Documentación y evidencias
 │   ├── INFORME_TECNICO.pdf       # Informe técnico formal del proyecto (PDF)
@@ -428,7 +448,70 @@ otel-lab/
 
 ---
 
-## 9. Decisiones de Diseño
+## 9. Tercer Microservicio: `data-service` (Arquitectura Multi-Cloud)
+
+`data-service` ([`services/data-service/`](services/data-service/)) es un tercer microservicio FastAPI cuyo único propósito es el acceso a datos, desacoplado de la lógica de negocio de `service-a`/`service-b`. Mantiene **dos pools de conexión PostgreSQL independientes**, uno por proveedor cloud, expuestos con el mismo contrato REST:
+
+| Endpoint | Backend | Descripción |
+|---|---|---|
+| `GET/POST /gcp/records` | GCP Cloud SQL | Lee/escribe contra `CLOUD_SQL_DSN` |
+| `GET/POST /aws/records` | AWS RDS (o su simulación, ver nota) | Lee/escribe contra `AWS_RDS_DSN` |
+| `GET /records` | Ambos | Vista federada: consulta los dos backends **dentro de la misma traza**, demostrando la topología multi-cloud en un solo request |
+| `GET /health` | Ambos | Estado de cada backend por separado |
+
+> ⚠️ **Nota de despliegue:** este proyecto se ejecuta íntegramente en **GCP** (no existe cuenta AWS activa). Para no incurrir en costo/credenciales de un proveedor externo, `AWS_RDS_DSN` apunta a un Postgres desplegado dentro del mismo clúster GKE ([`helm/data-service/templates/rds-sim.yaml`](helm/data-service/templates/rds-sim.yaml)), que cumple exactamente el mismo rol de red que cumpliría una instancia RDS real (mismo protocolo, mismo driver `asyncpg`, misma instrumentación OTel). Si en el futuro se dispone de una cuenta AWS, basta con apuntar el secret `aws_rds_dsn` a la instancia real — no hay que tocar una línea de código.
+
+### 9.1 OTel DB Semantic Conventions
+
+Cada operación de base de datos queda instrumentada en dos capas complementarias:
+
+1. **Auto-instrumentación** (`AsyncPGInstrumentor`): genera automáticamente `db.system`, `db.statement`, `db.name`, `net.peer.name`/`net.peer.port` para cada query.
+2. **Enriquecimiento manual** ([`services/data-service/src/database.py`](services/data-service/src/database.py), función `db_span()`): añade `db.operation`, `db.sql.table`, `server.address`, `server.port` y `cloud.provider` (`gcp` / `aws`) — el atributo que permite distinguir en Jaeger qué backend atendió cada operación dentro de la vista federada.
+
+```python
+with tracer.start_as_current_span(f"db.{operation}.{table}") as span:
+    span.set_attribute("db.system", "postgresql")
+    span.set_attribute("db.operation", operation)      # select | insert
+    span.set_attribute("db.sql.table", table)
+    span.set_attribute("server.address", target.host)
+    span.set_attribute("server.port", target.port)
+    span.set_attribute("cloud.provider", target.provider)  # gcp | aws
+```
+
+### 9.2 Los Tres Pilares en `data-service`
+
+Igual que `service-a`/`service-b`, `data-service` implementa trazas (OTLP gRPC → Jaeger), métricas de negocio (`data_service.records.created`, `data_service.db.query.duration`, `data_service.db.errors` por proveedor) y logs JSON estructurados con `trace_id`/`span_id` inyectados (`LoggingInstrumentor` + formatter propio, igual patrón que [`service-a/otel_setup.py`](services/service-a/otel_setup.py)).
+
+---
+
+## 10. Service Mesh (Istio) - Observabilidad de Red L7
+
+Se extendió el clúster con un **service mesh Istio** ([`mesh/`](mesh/)) para obtener observabilidad de red L7 (mTLS, métricas y trazas a nivel de proxy) sin modificar el código de las aplicaciones:
+
+| Recurso | Archivo | Función |
+|---|---|---|
+| `IstioOperator` | [`mesh/istio-operator.yaml`](mesh/istio-operator.yaml) | Instala el control plane (perfil `demo`) y registra un *extension provider* OTLP para que los sidecars Envoy exporten sus propias trazas L7 al mismo OTel Collector |
+| `Namespace` × 3 | [`mesh/namespaces.yaml`](mesh/namespaces.yaml) | `services` y `data-service` con `istio-injection: enabled`; `observability` sin inyección (Collector/Jaeger no son parte del mesh) |
+| `PeerAuthentication` | [`mesh/peer-authentication.yaml`](mesh/peer-authentication.yaml) | mTLS **STRICT** mesh-wide: todo el tráfico este-oeste entre `service-a`, `service-b` y `data-service` va cifrado y autenticado por identidad (SPIFFE) |
+| `PeerAuthentication` (excepción) | [`mesh/peer-authentication-observability.yaml`](mesh/peer-authentication-observability.yaml) | `PERMISSIVE` para el namespace `observability`: al no tener sidecar, bajo STRICT el Collector nunca recibiría los exportes OTLP de las apps |
+| `Telemetry` | [`mesh/telemetry.yaml`](mesh/telemetry.yaml) | 100% sampling de trazas L7 + access logging estructurado en cada sidecar |
+| `VirtualService` / `DestinationRule` | [`mesh/data-service-traffic.yaml`](mesh/data-service-traffic.yaml) | Reintentos automáticos (2 intentos, `5xx`/`connect-failure`), timeout de 10s y *outlier detection* para `data-service` |
+
+### 10.1 Validación realizada
+
+Dado que el acceso al proyecto GCP quedó pendiente de resolver durante este trabajo, el mesh se validó de punta a punta en un clúster **kind** local con Istio real (mismos manifiestos, mismos Helm charts, solo cambia el backend de Kubernetes):
+
+- Los pods de `service-a`, `service-b` y `data-service` corren con sidecar inyectado (`2/2` contenedores).
+- `PeerAuthentication STRICT` activo; las llamadas `service-a → service-b` siguen funcionando porque el mTLS se negocia de forma transparente entre sidecars.
+- Los *access logs* de Envoy confirman la intercepción y el enrutamiento L7 real del tráfico (visibles en el contenedor `istio-proxy`, no en el de la aplicación).
+- El OTel Collector recibe y procesa correctamente los spans de los **tres** servicios (confirmado con el exporter `debug`), incluyendo los atributos DB semantic conventions que distinguen `gcp-sim` de `rds-sim` por `server.address`.
+- `istioctl proxy-status` reporta todos los proxies `SYNCED` con `istiod`.
+
+Los mismos manifiestos quedan listos para aplicarse contra el clúster GKE real en cuanto se resuelva el acceso a la cuenta de GCP propietaria del proyecto.
+
+---
+
+## 11. Decisiones de Diseño
 
 | Decisión | Alternativas Consideradas | Justificación |
 |---|---|---|
@@ -438,10 +521,12 @@ otel-lab/
 | **Prometheus + Grafana** para métricas | Cloud Monitoring, Datadog | Estándar de facto en ecosistema Kubernetes; dashboards como código (JSON versionado) |
 | **GCP Cloud Logging** para logs | Loki, Elasticsearch | Integración nativa sin infraestructura adicional; búsqueda por `trace_id` directa |
 | **W3C TraceContext** | B3 (Zipkin), Jaeger propagation | Estándar IETF adoptado por todos los instrumentadores OTel; asegura correlación cross-service |
+| **AWS RDS simulado dentro de GKE** para `data-service` | Cuenta AWS real, LocalStack | El despliegue es exclusivamente GCP; un Postgres en el mismo clúster cumple el mismo rol de red (protocolo, driver e instrumentación OTel idénticos) sin costo ni credenciales de un tercer proveedor |
+| **Istio (perfil `demo`)** como service mesh | Linkerd, AWS App Mesh | Integración nativa con GKE (Cloud Service Mesh es Istio administrado), soporte maduro de mTLS automático y de la Telemetry API para exportar trazas/logs L7 al mismo OTel Collector |
 
 ---
 
-## 10. Conclusiones
+## 12. Conclusiones
 
 1. **Independencia de Proveedor (No Vendor Lock-In):** OpenTelemetry desacopla por completo el código de la aplicación de los backends de observabilidad. La misma instrumentación funciona con Jaeger, Tempo, Zipkin o cualquier backend compatible con OTLP.
 2. **Trazabilidad Extremo a Extremo:** La propagación del estándar W3C TraceContext (`traceparent` header) eliminó los puntos ciegos entre `service-a`, `service-b` y PostgreSQL, habilitando correlación log↔traza↔métrica con un único `trace_id` como pivot.
