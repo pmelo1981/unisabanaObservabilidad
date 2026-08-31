@@ -1,0 +1,457 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 99, 132, 1)",
+        "name": "Alert Firing Events",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Dashboard para el equipo de Operaciones (Ops): Comparativa de 30 minutos en 2 épocas de 15 min (Sin correlación vs Con correlación de anomalías) con Chaos Engineering y Simulador de Avalancha de Notificaciones.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Época Operativa Activa (15 Min / Época)",
+      "description": "1 = Época 1 (Sistema Estático Tradicional - Avalancha de Alertas), 2 = Época 2 (Sistema Correlacionado Inteligente)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "ÉPOCA 1: Estática (Ruido)", "color": "orange" },
+                "2": { "text": "ÉPOCA 2: Correlación (Limpio)", "color": "green" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_active_epoch or vector(1)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Alerta Crítica Correlacionada (Ops)",
+      "description": "Estado de alerta del sistema inteligente (Dispara únicamente cuando Error > 2σ Y Latencia > 200ms)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "🟢 NORMAL (Sin Incidentes)", "color": "green" },
+                "1": { "text": "🚨 CRITICAL INCIDENT", "color": "red" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_correlated_firing or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Total Notificaciones Recibidas (Avalancha)",
+      "description": "Cantidad acumulada de notificaciones que saturan la bandeja de entrada del operador",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "alert_notifications_received_total or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Tasa de Avalancha (Notifs / Minuto)",
+      "description": "Velocidad de llegada de notificaciones. En Época 1 supera 25 notifs/min por flapping",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "alert_avalanche_rate_per_minute or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Falsas Alarmas Suprimidas (Ruido Eliminado)",
+      "description": "Falsos positivos de micro-jitter y flapping filtrados por correlación multi-señal",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(anomaly_detector_noise_filtered_total) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Simulador de Avalancha de Notificaciones (Notificaciones / Minuto en Vivo)",
+      "description": "Compara la tormenta de spam de notificaciones en la Época 1 (estática) contra la calma de la Época 2 (correlacionada).",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 40,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Tasa de Avalancha de Notificaciones (Notifs/min)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "alert_avalanche_rate_per_minute",
+          "legendFormat": "Tasa de Avalancha de Notificaciones (Notifs/min)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Comparativa de Épocas (30 Minutos Continuos): Alertas Estáticas vs Correlacionadas",
+      "description": "Muestra la tormenta ininterrumpida de alertas estáticas (Época 1) vs la alerta única y precisa (Época 2) bajo EL MISMO tráfico y caos.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 11 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Alertas Sistema Estático (Época 1 - Ruido)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Alertas Sistema Correlacionado (Época 2 - Inteligente)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } },
+              { "id": "custom.lineWidth", "value": 3 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_static_firing",
+          "legendFormat": "Alertas Sistema Estático (Época 1 - Ruido)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_correlated_firing",
+          "legendFormat": "Alertas Sistema Correlacionado (Época 2 - Inteligente)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Línea Base Dinámica: Z-Score de Tasa de Error vs Umbral +2σ",
+      "description": "Comportamiento estadístico de la tasa de error sobre tráfico HTTP real. Se dispara únicamente al cruzar la banda +2.0σ.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_error_z_score",
+          "legendFormat": "Z-Score de Error Actual (σ)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(2.0)",
+          "legendFormat": "Umbral de Anomalía Crítica (+2.0σ)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Latencia P99 Real vs Umbral Estático (50ms) vs SLO Crítico (200ms)",
+      "description": "Latencia P99 real medida sobre las peticiones HTTP. Demuestra por qué 50ms satura de alertas en micro-jitters, mientras 200ms solo alerta en degradación severa.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Umbral Estático (50ms - Generador de Ruido)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } },
+              { "id": "custom.lineStyle", "value": { "dash": [5, 5], "fill": "dash" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Umbral SLO Real (200ms)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 5], "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "anomaly_detector_latency_p99_ms",
+          "legendFormat": "Latencia P99 en Vivo (ms)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(50)",
+          "legendFormat": "Umbral Estático (50ms - Generador de Ruido)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(200)",
+          "legendFormat": "Umbral SLO Real (200ms)",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Throughput Real de Base de Datos por Proveedor (Cloud SQL vs AWS RDS)",
+      "description": "Tasa de inserciones y consultas reales procesadas por segundo",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(data_service_records_created_total[1m])) by (provider)",
+          "legendFormat": "Records Creados - {{provider}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["ops", "alerts", "anomalies", "chaos", "avalanche", "observability"],
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "timezone": "browser",
+  "title": "OTel Lab — Ops Alerting View (30 Min — Chaos & Avalancha)",
+  "uid": "ops-alerts-v1",
+  "version": 2
+}

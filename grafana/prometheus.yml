@@ -1,11 +1,15 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-  scrape_timeout: 10s
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  scrape_timeout: 4s
+
+rule_files:
+  - "/etc/prometheus/alert_rules.yml"
 
 scrape_configs:
   # ── Metricas exportadas por los microservicios (via OTel Collector) ────────
   - job_name: "otel-services"
+    scrape_interval: 5s
     static_configs:
       - targets: ["otel-collector:8889"]
     relabel_configs:
