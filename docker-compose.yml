@@ -182,6 +182,7 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./grafana/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
     ports:
       - "9090:9090"
     depends_on:
@@ -198,6 +199,8 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
       GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

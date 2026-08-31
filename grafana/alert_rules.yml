@@ -1,0 +1,46 @@
+# ==============================================================================
+# Prometheus Alerting Rules — Deteccion de Anomalias y Alertas Operativas
+# ==============================================================================
+
+groups:
+  - name: ops_alerting_rules
+    interval: 5s
+    rules:
+      # ── 1. Alerta Estatica Tradicional (Epoca 1 - Genera Ruido y Fatiga) ──
+      - alert: StaticHighLatencyOrErrors
+        expr: >-
+          (sum(rate(data_service_db_errors_total[1m])) > 0)
+          or
+          (histogram_quantile(0.99, sum(rate(data_service_db_query_duration_milliseconds_bucket[1m])) by (le)) > 50)
+          or
+          (anomaly_detector_static_firing == 1)
+        for: 5s
+        labels:
+          severity: warning
+          system_type: static_threshold
+          epoch: "1"
+        annotations:
+          summary: "Alerta Estática: Latencia > 50ms o Error Detectado (Posible Falso Positivo)"
+          description: "Disparada por umbral estático rígido sin considerar línea base ni correlación multi-señal."
+
+      # ── 2. Alerta Correlacionada Inteligente (Epoca 2 - Sin Falsos Positivos) ──
+      - alert: CorrelatedMultiSignalIncident
+        expr: >-
+          (anomaly_detector_correlated_firing == 1)
+          or
+          (
+            (anomaly_detector_error_z_score >= 2.0)
+            and
+            (anomaly_detector_latency_p99_ms >= 200.0)
+          )
+        for: 5s
+        labels:
+          severity: critical
+          system_type: correlated_anomaly
+          epoch: "2"
+        annotations:
+          summary: "Incidente Correlacionado Crítico: Error Rate > 2σ Y Latencia p99 > SLO (200ms)"
+          description: "Anomalía coordinada confirmada en data-service. Ruido transitorio filtrado con éxito."
+          dashboard_url: "http://localhost:3000/d/ops-alerts-v1"
+          jaeger_query: "http://localhost:16686/search?service=data-service"
+
