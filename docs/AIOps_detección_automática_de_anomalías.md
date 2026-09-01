@@ -159,6 +159,3 @@ Al detonarse el incidente severo coordinado en la fase 2 (Minuto 25:00), el moto
 4. **Prevención de Avalanchas (*Flapping Suppression*):**
    * **Recomendación:** Ajustar los intervalos de evaluación (`for: 15s - 30s` en Prometheus) para evitar tormentas de notificaciones durante fluctuaciones de corta duración.
 
----
-*Reporte generado y verificado automáticamente bajo los estándares SRE y Chaos Engineering.*
-
