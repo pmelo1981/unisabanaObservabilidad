@@ -27,7 +27,7 @@ aplicado desde Cloud Shell con la cuenta `jorgeayva@unisabana.edu.co`:
 | Canal de notificación (email) | ✅ Creado | `jorgeayva@unisabana.edu.co` |
 | `security/failed_auth_workload`, `flow_east_west_bytes`, `flow_egress_internet_bytes`, `gke_posture_findings` | ✅ Creadas | resto de métricas basadas en logs (10 en total) |
 | Alerta **SEC-1** Ráfaga de auth fallida | ✅ Creada | `alertPolicies/2821121601167144740` |
-| Alerta **SEC-2** Tráfico E-W no autorizado | ✅ Creada | `alertPolicies/11068496798239839244` — corregida, ver §12 |
+| Alerta **SEC-2** Tráfico E-W no autorizado | ✅ Creada y **verificada disparando** | `alertPolicies/11068496798239839244` — cuatro defectos corregidos, ver §12 y §15 |
 | Alerta **SEC-3** Volumen E-W desviado | ✅ Creada | `alertPolicies/7308953874817893058` |
 | Alerta **SEC-4** Conexiones denegadas | ✅ Creada | `alertPolicies/10116743042310907219` |
 | Alerta **SEC-5** Egress anómalo | ✅ Creada | `alertPolicies/17773790989406348272` |
@@ -37,8 +37,11 @@ aplicado desde Cloud Shell con la cuenta `jorgeayva@unisabana.edu.co`:
 | GSA `dev-security-exporter` + Workload Identity | ✅ Creada | roles `containeranalysis.occurrences.viewer`, `artifactregistry.reader` |
 | Deployment `security-exporter` (namespace `observability`) | ✅ Corriendo | imagen `us-central1-docker.pkg.dev/…/otel-lab/security-exporter:1.0.0`, sondeo OK: *"8 series de CVE"* |
 
-**Falta para cerrar el módulo:** ejecutar `scripts/modulo-c-validacion.sh` para
-la evidencia y la medición de MTTD; y, si el equipo lo decide, SEC-6 (§13).
+**Validación ejecutada** contra el clúster: SEC-1, SEC-2, SEC-4 y SEC-7 han
+abierto incidentes reales. **MTTD medido: 8 min 51 s** — el desglose y por qué
+no se alcanza el objetivo de 2 min del Módulo D están en §15.
+
+**Falta, y no depende del Módulo C:** SEC-6 (§13) y la activación de SCC (§14).
 
 ### Hallazgo del apply real
 
@@ -84,7 +87,7 @@ a byte** como los dejaron los compañeros.
 | Habilitar VPC Flow Logs (GCP) | `infrastructure/gcp-modulo-c/PARCHE-modulo-a.md` §1 | ✅ **Aplicado y activo** (§0) |
 | Habilitar VPC Flow Logs (AWS) | `infrastructure/aws/` | Codificado y validado, **no aplicado** (se trabaja sobre GCP, no hay cuenta AWS) |
 | Alertas de tráfico anómalo entre servicios | `infrastructure/gcp-modulo-c/security-alerts.tf` → SEC-2, SEC-3, SEC-4, SEC-5 | ✅ **Aplicadas.** SEC-2 corregida tras una tormenta de falsos positivos (§12) |
-| Security Command Center **o** AWS Security Hub | `security-command-center.tf` / `infrastructure/aws/security-hub.tf` | Bloqueado por falta de organización → plan B activo (§6) |
+| Security Command Center **o** AWS Security Hub | `security-command-center.tf` / `infrastructure/aws/security-hub.tf` | SCC no activado en la organización y sin permisos de org para esta cuenta (§14) → plan B activo y cubriendo el requisito (§6) |
 | Dashboard Golden Signals de Seguridad | `dashboards/security-golden-signals.json.tftpl` | ✅ **Creado.** El panel de CVEs queda vacío hasta que se arregle el collector (§13) |
 
 ---
@@ -96,7 +99,7 @@ Todo lo de esta tabla se comprobó directamente en el proyecto, no se supuso.
 | Elemento | Valor |
 |---|---|
 | Proyecto | `observabilidad` · `project-546ee9f1-20e7-4368-919` · nº `725349944399` |
-| Organización del proyecto | **Ninguna** (`No organization`). Existe `jorgeayva-org` (`1096573089885`) pero el proyecto no está dentro |
+| Organización del proyecto | **`797643117080`** — el proyecto SÍ está dentro de una organización. Ver §14: mi afirmación inicial de que no lo estaba era incorrecta |
 | VPC | `dev-otel-vpc`, modo personalizado |
 | Subred | `dev-gke-subnet`, `us-central1`, `10.0.0.0/20`; secundarios `gke-pods 10.48.0.0/14`, `gke-services 10.52.0.0/20` |
 | **VPC Flow Logs** | ✅ **Activos** desde el 2026-09-01 (agregación 30 s, muestreo 1.0, metadatos completos) |
@@ -498,3 +501,117 @@ en `security-alerts.tf` detrás de `var.enable_cve_alert = false`, para que el
 El arreglo, con los comandos exactos y su reversión, está en
 `infrastructure/gcp-modulo-c/PARCHE-modulo-a.md` §5. El día que se aplique, SEC-6
 es cambiar una variable a `true` y aplicar.
+
+---
+
+## 14. Corrección: el proyecto sí está en una organización
+
+Este documento afirmaba en §3 que el proyecto no pertenecía a ninguna
+organización. **Era incorrecto, y el error fue mío.** Me fié de lo que muestra
+la consola en lugar de consultar la jerarquía de recursos.
+
+```
+$ gcloud projects get-ancestors project-546ee9f1-20e7-4368-919
+ID: project-546ee9f1-20e7-4368-919   TYPE: project
+ID: 797643117080                      TYPE: organization
+```
+
+La consola muestra *"No organization"* porque `jorgeayva@unisabana.edu.co` no
+tiene permiso para **leer** el recurso de organización; la interfaz traduce esa
+falta de visibilidad como ausencia. La jerarquía real no es ambigua.
+
+**Lección aplicable más allá de este caso:** en GCP, "no lo veo en la consola"
+y "no existe" son afirmaciones distintas, y la diferencia entre ambas suele ser
+un permiso. La API de Resource Manager responde a la pregunta correcta.
+
+### Qué cambia esto para SCC — y qué no
+
+Verificado con la API, no supuesto:
+
+| Comprobación | Resultado |
+|---|---|
+| APIs `securitycenter` y `securitycentermanagement` | ✅ Habilitadas |
+| API de gestión de SCC con ámbito de **proyecto** | ✅ **HTTP 200** — hay acceso |
+| Los 18 servicios de SCC | `intended=INHERITED` / `effective=DISABLED` |
+| `securitycenter.findings.list` a nivel de organización | ❌ 403 para esta cuenta |
+| API de findings (v2, ámbito proyecto) | ❌ 400: *"Security Command Center Legacy has been permanently disabled as of June 7, 2021. Migrate to Standard or Premium tier"* |
+
+Es decir: **la organización no tiene SCC activado en ningún nivel**, y esta
+cuenta no tiene permisos de SCC sobre la organización. Que el proyecto esté
+dentro de una organización era condición necesaria, no suficiente.
+
+Activar SCC —a nivel de organización o de proyecto— tiene **implicación de
+costo** sobre un proyecto compartido, así que es una decisión del equipo y del
+dueño de la facturación, no algo que se resuelva desde este módulo.
+
+Mientras tanto **el plan B sigue cubriendo el requisito**, y no como
+sustituto pobre: GKE Security Posture (gratis), Artifact Analysis y Cloud Audit
+Logs alimentan las mismas señales del dashboard, y SEC-7 ya ha abierto
+incidentes reales con hallazgos de configuración de workloads.
+
+---
+
+## 15. Medición de MTTD, con datos reales
+
+Ejecutada contra el clúster el 2026-09-01 inyectando conexiones a puertos
+cerrados (9999, 6379) desde el pod `modulo-c-probe` hacia IPs de pod de la
+aplicación en **otros nodos**.
+
+### Cuarto defecto de SEC-2: no disparaba con ataques cortos
+
+La primera medición (T0 = 15:45:44) capturó el ataque en la métrica —3 series,
+`modulo-c-probe → pod de la app`, cero ruido— y aun así **no abrió incidente**.
+
+Causa: `duration = 60s`. La condición debía sostenerse un minuto entero, y la
+ráfaga duró ~20 s: datos a las 20:51:37 y 20:52:37 UTC, y vuelta a cero. La
+ventana nunca se completó.
+
+SEC-1, SEC-4 y SEC-7 usan `duration = 0s` y sí dispararon el mismo día con
+señales equivalentes. **Un escaneo de puertos dura segundos; exigirle
+persistencia de un minuto es pedirle al atacante que insista.** Cambiado a
+`0s`, y al aplicarlo el incidente se abrió de inmediato sobre los datos que
+`60s` había dejado pasar.
+
+`0s` solo es seguro porque el filtro de la métrica es preciso —cero
+coincidencias en 3 h de tráfico normal (§12)—. Con el filtro anterior, `0s`
+habría sido una tormenta.
+
+### Medición limpia
+
+Segunda inyección, ya con `duration = 0s`:
+
+| Hito | Instante | Δ desde T0 |
+|---|---|---|
+| Inyección del ataque (T0) | 15:59:31 | — |
+| Flujo visible en Cloud Logging | ~16:05 | **323 s** (medido en la 1ª inyección) |
+| Métrica con datos en Cloud Monitoring | 16:06:05 | **394 s** |
+| **Primer incidente SEC-2 abierto** | **16:08:22** | **531 s ≈ 8 min 51 s** |
+
+Se abrieron **3 incidentes**: uno por cada par de pods alcanzado
+(`probe→service-a`, `probe→service-b`, `probe→data-service`). Es la
+granularidad correcta que buscaba la corrección de §12 — antes habrían sido
+uno por cada puerto.
+
+### El resultado incómodo: no se cumple el objetivo de MTTD
+
+El Módulo D fija un MTTD objetivo **< 2 min**. Lo medido es **~8 min 51 s**, y
+el desglose dice exactamente dónde está el problema:
+
+| Tramo | Tiempo | ¿Se puede reducir desde el Módulo C? |
+|---|---|---|
+| Tráfico → visible en Cloud Logging | ~5,5–6,5 min | **No.** Es la latencia de ingesta de VPC Flow Logs |
+| Logging → métrica en Monitoring | ~1 min | No, es del servicio |
+| Métrica → incidente | ~2,3 min | Ya está al mínimo (`duration = 0s`) |
+
+**El 75 % del MTTD es latencia de ingesta de VPC Flow Logs**, no configuración
+nuestra. Bajar `logging-aggregation-interval` a 5 s no lo arregla: el intervalo
+de agregación no es el cuello de botella, la ingesta sí — y multiplicaría el
+volumen y el costo sin mover la aguja.
+
+Conclusión honesta para la entrega: **para detección en menos de 2 minutos, los
+VPC Flow Logs no son la fuente adecuada.** Sirven para forense, para el mapa de
+tráfico N-S/E-W y para detección en el orden de minutos, que es justo lo que
+pide el enunciado del punto C. Un objetivo de segundos exige telemetría en el
+plano de datos —eBPF (GKE Dataplane V2 observability), o los access logs de un
+service mesh—, y eso es una decisión de arquitectura del Módulo A, no un ajuste
+de umbral aquí.
