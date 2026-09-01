@@ -611,7 +611,10 @@ resource "google_monitoring_alert_policy" "gke_posture" {
         alignment_period     = "300s"
         per_series_aligner   = "ALIGN_DELTA"
         cross_series_reducer = "REDUCE_SUM"
-        group_by_fields      = ["metric.label.severity", "metric.label.finding_type"]
+        # Se agrupa tambien por 'resource': un mismo hallazgo en dos workloads
+        # distintos son dos cosas que arreglar, y sin esta etiqueta el correo
+        # no dice donde mirar.
+        group_by_fields = ["metric.label.severity", "metric.label.finding_type", "metric.label.resource"]
       }
 
       trigger {
@@ -628,14 +631,27 @@ resource "google_monitoring_alert_policy" "gke_posture" {
 
   documentation {
     mime_type = "text/markdown"
-    subject   = "[SEC-7] $${metric.label.finding_type} ($${metric.label.severity})"
+    subject   = "[SEC-7] $${metric.label.finding_type} en $${metric.label.resource} ($${metric.label.severity})"
     content   = <<-EOT
-      GKE Security Posture detecto `$${metric.label.finding_type}` con
-      severidad `$${metric.label.severity}` en un workload del cluster.
+      GKE Security Posture detecto **`$${metric.label.finding_type}`** con
+      severidad `$${metric.label.severity}` en:
 
-      Ejemplos tipicos: contenedor privilegiado, `hostPath` montado,
-      capabilities de Linux innecesarias, ausencia de `securityContext`,
-      o un boletin de seguridad de GKE que afecta a la version del cluster.
+      ```
+      $${metric.label.resource}
+      ```
+
+      Solo se notifican hallazgos en estado `ACTIVE`. Si este workload aparece
+      aqui, la configuracion insegura sigue vigente: la alerta se cierra sola
+      cuando GKE emite el `REMEDIATED` correspondiente.
+
+      ## Que hacer
+
+      1. `kubectl get <recurso> -o yaml` y revisar `securityContext`.
+      2. Los dos hallazgos habituales de este cluster se arreglan en el chart:
+         - `RUN_AS_NONROOT` → `securityContext.runAsNonRoot: true`
+         - `PRIVILEGE_ESCALATION` → `securityContext.allowPrivilegeEscalation: false`
+      3. Si el workload no es del Modulo C, el arreglo va en el chart de Helm
+         de quien lo mantiene, no aqui.
 
       Detalle completo en la consola: **Kubernetes Engine > Postura de
       seguridad**.
