@@ -60,3 +60,6 @@ docs/*.html
 
 # Terraform (local)
 **/.terraform/
+
+# Herramientas locales (Modulo D)
+.tools/

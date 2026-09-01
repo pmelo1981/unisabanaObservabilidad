@@ -1,5 +1,8 @@
 # Laboratorio: Pipeline de Observabilidad End-to-End con OpenTelemetry
 
+> **Actividad 3.3 — Módulo D:** los experimentos de Chaos Engineering deben ejecutarse únicamente en un sandbox autorizado y sus resultados deben acompañarse de evidencia reproducible.
+> El procedimiento local está en [`chaos/README.md`](chaos/README.md) y la adaptación pendiente de validar en GCP/GKE está en [`chaos/gcp/README.md`](chaos/gcp/README.md).
+
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.27.0-blueviolet?logo=opentelemetry)](https://opentelemetry.io/)
 [![Google Cloud](https://img.shields.io/badge/GCP-GKE%20%2B%20Cloud%20SQL-4285F4?logo=googlecloud)](https://cloud.google.com/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.35.6-326CE5?logo=kubernetes)](https://kubernetes.io/)
@@ -9,6 +12,7 @@
 [![Grafana](https://img.shields.io/badge/Grafana-v11.2-F46800?logo=grafana)](https://grafana.com/)
 [![k6](https://img.shields.io/badge/k6-v0.53.0-7D64FF?logo=k6)](https://k6.io/)
 [![Istio](https://img.shields.io/badge/Istio-1.23-466BB0?logo=istio)](https://istio.io/)
+[![Guía IA](https://img.shields.io/badge/Gu%C3%ADa%20Colaboraci%C3%B3n-IA%20Prompts-success?logo=openai)](docs/GUIA_COLABORACION_IA.md)
 [![Informe Técnico](https://img.shields.io/badge/Informe%20T%C3%A9cnico-PDF-red?logo=adobeacrobatreader)](docs/INFORME_TECNICO.pdf)
 
 ---
@@ -95,24 +99,24 @@ Adicionalmente, `data-service` accede a **dos backends PostgreSQL independientes
 
 | Recurso | Identificador / Detalle Técnico | Estado |
 |---|---|:---:|
-| **GCP Project ID** | `project-5a2d47d3-3365-4f97-a3a` | Activo |
+| **GCP Project ID** | `project-546ee9f1-20e7-4368-919` | Activo |
 | **Región / Zona** | `us-central1` / `us-central1-a` | Activo |
 | **Clúster GKE** | `dev-otel-cluster` (GKE `v1.35.6-gke.1258000`) | Activo |
 | **Control Plane Endpoint** | `https://34.173.199.69` | Activo |
-| **Artifact Registry** | `us-central1-docker.pkg.dev/project-5a2d47d3-3365-4f97-a3a/otel-lab` | Activo |
-| **Base de Datos** | Cloud SQL PostgreSQL 16 (`otel-postgres`) | Activo |
+| **Artifact Registry** | `us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab` | Activo |
+| **Base de Datos** | Cloud SQL PostgreSQL 16 (`dev-otel-postgres`) | Activo |
 
 ### 1.3 Matriz de Servicios, Puertos e IPs Públicas (GCP LoadBalancer)
 
 | Namespace | Servicio | Tipo | IP / Endpoint Público | Puerto Interno | Función |
 |---|---|:---:|---|:---:|---|
-| `services` | `service-a` | LoadBalancer | **[http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
-| `services` | `service-b` | ClusterIP | `10.52.3.234` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
-| `data-service` | `data-service` | ClusterIP | *(pendiente de desplegar, ver §9)* | `8080/TCP` | Acceso a datos multi-cloud (GCP Cloud SQL + AWS RDS) |
-| `observability` | `otel-stack-grafana` | LoadBalancer | **[http://34.44.185.170](http://34.44.185.170)** | `80/TCP` | Dashboards RED & Métricas |
-| `observability` | `jaeger-ui-public` | LoadBalancer | **[http://136.116.193.6:16686](http://136.116.193.6:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
-| `observability` | `otel-collector` | ClusterIP | `10.52.10.55` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
-| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.7.36` (Red Privada) | `80/TCP` | Backend de Métricas |
+| `services` | `service-a` | LoadBalancer | **[http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
+| `services` | `service-b` | ClusterIP | `10.52.15.158` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
+| `services` | `data-service` | ClusterIP | `10.52.13.115` (Red Privada) | `8080/TCP` | Acceso a datos PostgreSQL (Cloud SQL) |
+| `observability` | `otel-stack-grafana` | LoadBalancer | **[http://35.253.127.244](http://35.253.127.244)** | `80/TCP` | Dashboards RED & Métricas |
+| `observability` | `jaeger-ui-public` | LoadBalancer | **[http://34.134.141.14:16686](http://34.134.141.14:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
+| `observability` | `otel-collector` | ClusterIP | `10.52.12.109` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
+| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.1.97` (Red Privada) | `80/TCP` | Backend de Métricas |
 
 ---
 
@@ -315,14 +319,14 @@ Resultados obtenidos ejecutando k6 con **50 VUs durante ~46 segundos** en dos co
 ### 6.1 Acceso Directo por Internet (GCP LoadBalancers)
 No requiere VPN ni comandos locales:
 
-* 🌐 **Service A (Swagger / API Docs):** [http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)
-* 🌐 **Grafana Server (Dashboards RED):** [http://34.44.185.170](http://34.44.185.170) *(User: `admin`, Password: `admin`)*
-* 🌐 **Jaeger UI (Trazas Distribuidas):** [http://136.116.193.6:16686](http://136.116.193.6:16686)
+* 🌐 **Service A (Swagger / API Docs):** [http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs)
+* 🌐 **Grafana Server (Dashboards RED):** [http://35.253.127.244](http://35.253.127.244) *(User: `admin`, Password: `admin`)*
+* 🌐 **Jaeger UI (Trazas Distribuidas):** [http://34.134.141.14:16686](http://34.134.141.14:16686)
 
 ### 6.2 Acceso Alternativo vía Port-Forward Local
 ```bash
 # 1. Obtener credenciales del clúster GKE
-gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-5a2d47d3-3365-4f97-a3a
+gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-546ee9f1-20e7-4368-919
 
 # 2. Port-forward de Service A
 kubectl port-forward service/service-a 8000:8000 -n services
@@ -338,7 +342,7 @@ kubectl port-forward service/otel-stack-grafana 3000:80 -n observability
 ```bash
 # Generar 10 transacciones end-to-end contra la IP pública
 for i in {1..10}; do
-  curl -s "http://136.115.138.169:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
+  curl -s "http://35.193.118.242:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
 done
 ```
 
@@ -419,6 +423,7 @@ otel-lab/
 │   └── data-service/             # Chart Helm de Data Service (+ rds-sim.yaml)
 │
 ├── docs/                         # Documentación y evidencias
+│   ├── GUIA_COLABORACION_IA.md   # Guía paso a paso y prompts para asistentes de IA
 │   ├── INFORME_TECNICO.pdf       # Informe técnico formal del proyecto (PDF)
 │   └── screenshots/              # Capturas reales de Jaeger, Grafana y Swagger
 │       ├── jaeger-ui.png         # Vista general de trazas distribuidas

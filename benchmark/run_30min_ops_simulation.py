@@ -70,14 +70,14 @@ CHAOS_PHASES = [
         "chaos_config": {"scenario": "latency_jitter", "latency_ms": 150.0, "latency_rate": 1.0},
     },
     {
-        "name": "3. Errores 503 Reales Aislados (10%)",
+        "name": "3. Errores 500 Reales Aislados (10%)",
         "share": 0.20,  # 3.0 min
-        "chaos_config": {"scenario": "transient_errors", "error_rate": 0.10, "error_status_code": 503},
+        "chaos_config": {"scenario": "transient_errors", "error_rate": 0.10, "error_status_code": 500},
     },
     {
         "name": "4. Incidente Severo Real (50% Fallos + 350ms)",
         "share": 0.20,  # 3.0 min
-        "chaos_config": {"scenario": "coordinated_incident", "latency_ms": 350.0, "error_rate": 0.50, "error_status_code": 503},
+        "chaos_config": {"scenario": "coordinated_incident", "latency_ms": 350.0, "error_rate": 0.50, "error_status_code": 500},
     },
     {
         "name": "5. Recuperación a Tráfico Normal",

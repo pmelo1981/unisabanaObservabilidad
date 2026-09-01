@@ -43,6 +43,8 @@ spec:
               value: {{ .Values.deploymentEnv | default "production" | quote }}
             - name: CLOUD_PROVIDER
               value: "gcp"
+            - name: CHAOS_CONTROL_ENABLED
+              value: {{ .Values.chaosControl.enabled | default false | quote }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
