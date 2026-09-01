@@ -95,24 +95,24 @@ Adicionalmente, `data-service` accede a **dos backends PostgreSQL independientes
 
 | Recurso | Identificador / Detalle Técnico | Estado |
 |---|---|:---:|
-| **GCP Project ID** | `project-5a2d47d3-3365-4f97-a3a` | Activo |
+| **GCP Project ID** | `project-546ee9f1-20e7-4368-919` | Activo |
 | **Región / Zona** | `us-central1` / `us-central1-a` | Activo |
 | **Clúster GKE** | `dev-otel-cluster` (GKE `v1.35.6-gke.1258000`) | Activo |
 | **Control Plane Endpoint** | `https://34.173.199.69` | Activo |
-| **Artifact Registry** | `us-central1-docker.pkg.dev/project-5a2d47d3-3365-4f97-a3a/otel-lab` | Activo |
-| **Base de Datos** | Cloud SQL PostgreSQL 16 (`otel-postgres`) | Activo |
+| **Artifact Registry** | `us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab` | Activo |
+| **Base de Datos** | Cloud SQL PostgreSQL 16 (`dev-otel-postgres`) | Activo |
 
 ### 1.3 Matriz de Servicios, Puertos e IPs Públicas (GCP LoadBalancer)
 
 | Namespace | Servicio | Tipo | IP / Endpoint Público | Puerto Interno | Función |
 |---|---|:---:|---|:---:|---|
-| `services` | `service-a` | LoadBalancer | **[http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
-| `services` | `service-b` | ClusterIP | `10.52.3.234` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
-| `data-service` | `data-service` | ClusterIP | *(pendiente de desplegar, ver §9)* | `8080/TCP` | Acceso a datos multi-cloud (GCP Cloud SQL + AWS RDS) |
-| `observability` | `otel-stack-grafana` | LoadBalancer | **[http://34.44.185.170](http://34.44.185.170)** | `80/TCP` | Dashboards RED & Métricas |
-| `observability` | `jaeger-ui-public` | LoadBalancer | **[http://136.116.193.6:16686](http://136.116.193.6:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
-| `observability` | `otel-collector` | ClusterIP | `10.52.10.55` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
-| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.7.36` (Red Privada) | `80/TCP` | Backend de Métricas |
+| `services` | `service-a` | LoadBalancer | **[http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs)** | `8000/TCP` | API Gateway / Swagger Live |
+| `services` | `service-b` | ClusterIP | `10.52.15.158` (Red Privada) | `8001/TCP` | Catálogo de Inventario |
+| `services` | `data-service` | ClusterIP | `10.52.13.115` (Red Privada) | `8080/TCP` | Acceso a datos PostgreSQL (Cloud SQL) |
+| `observability` | `otel-stack-grafana` | LoadBalancer | **[http://35.253.127.244](http://35.253.127.244)** | `80/TCP` | Dashboards RED & Métricas |
+| `observability` | `jaeger-ui-public` | LoadBalancer | **[http://34.134.141.14:16686](http://34.134.141.14:16686)** | `16686/TCP` | Trazas Distribuidas Jaeger |
+| `observability` | `otel-collector` | ClusterIP | `10.52.12.109` (Red Privada) | `4317` / `4318` / `8889` | Agente Central OTel |
+| `observability` | `otel-stack-prometheus-server` | ClusterIP | `10.52.1.97` (Red Privada) | `80/TCP` | Backend de Métricas |
 
 ---
 
@@ -315,14 +315,14 @@ Resultados obtenidos ejecutando k6 con **50 VUs durante ~46 segundos** en dos co
 ### 6.1 Acceso Directo por Internet (GCP LoadBalancers)
 No requiere VPN ni comandos locales:
 
-* 🌐 **Service A (Swagger / API Docs):** [http://136.115.138.169:8000/docs](http://136.115.138.169:8000/docs)
-* 🌐 **Grafana Server (Dashboards RED):** [http://34.44.185.170](http://34.44.185.170) *(User: `admin`, Password: `admin`)*
-* 🌐 **Jaeger UI (Trazas Distribuidas):** [http://136.116.193.6:16686](http://136.116.193.6:16686)
+* 🌐 **Service A (Swagger / API Docs):** [http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs)
+* 🌐 **Grafana Server (Dashboards RED):** [http://35.253.127.244](http://35.253.127.244) *(User: `admin`, Password: `admin`)*
+* 🌐 **Jaeger UI (Trazas Distribuidas):** [http://34.134.141.14:16686](http://34.134.141.14:16686)
 
 ### 6.2 Acceso Alternativo vía Port-Forward Local
 ```bash
 # 1. Obtener credenciales del clúster GKE
-gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-5a2d47d3-3365-4f97-a3a
+gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-546ee9f1-20e7-4368-919
 
 # 2. Port-forward de Service A
 kubectl port-forward service/service-a 8000:8000 -n services
@@ -338,7 +338,7 @@ kubectl port-forward service/otel-stack-grafana 3000:80 -n observability
 ```bash
 # Generar 10 transacciones end-to-end contra la IP pública
 for i in {1..10}; do
-  curl -s "http://136.115.138.169:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
+  curl -s "http://35.193.118.242:8000/process/$((RANDOM % 10 + 1))" | python -m json.tool
 done
 ```
 
