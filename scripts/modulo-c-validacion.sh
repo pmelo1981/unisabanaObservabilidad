@@ -48,10 +48,13 @@ POD="modulo-c-probe"
 TIMEOUT_ESPERA=420 # 7 min: margen holgado sobre el objetivo de MTTD de 2 min
 
 # ── Destinos reales, verificados contra los charts y contra el cluster ───────
-# Los tres servicios NO escuchan en el mismo puerto, y data-service NO esta en
-# un namespace propio: vive en 'services' con el nombre que le da el fullname
-# de Helm ({{ .Release.Name }}-{{ .Chart.Name }}) -> data-service-data-service.
-SVC_DATA="data-service-data-service.${NS}.svc.cluster.local"
+# Los tres servicios NO escuchan en el mismo puerto (8000 / 8001 / 8080) y
+# ninguno tiene namespace propio: los tres viven en 'services'.
+#
+# El Modulo D anadio 'fullnameOverride: data-service' a helm/data-service, asi
+# que el Service pasó de llamarse 'data-service-data-service' a 'data-service'.
+# Verificado en el cluster tras el merge (2026-09-01).
+SVC_DATA="data-service.${NS}.svc.cluster.local"
 SVC_B="service-b.${NS}.svc.cluster.local"
 
 # ── Por que el escenario B apunta a IPs DE POD y no a nombres de Service ─────

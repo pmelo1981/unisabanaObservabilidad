@@ -107,7 +107,7 @@ Todo lo de esta tabla se comprobó directamente en el proyecto, no se supuso.
 | `var.environment` | **`dev`** (deducido de los nombres, coincide con el Terraform) |
 | Istio | **No instalado** — no existe `istio-system` |
 | Namespaces | `services` y `observability` |
-| `data-service` | Deployment y Service `data-service-data-service`, namespace **`services`** |
+| `data-service` | Deployment y Service **`data-service`**, namespace `services`. Se llamaba `data-service-data-service` hasta que el Módulo D añadió `fullnameOverride`; ver §16 |
 | `rds-sim` | namespace `services`, puerto 5432 |
 | Puertos reales | `service-a` **8000**, `service-b` **8001**, `data-service` **8080** |
 | Ajeno al módulo | `otel-stack-grafana` está en `0/1` — reportado, no tocado |
@@ -615,3 +615,43 @@ pide el enunciado del punto C. Un objetivo de segundos exige telemetría en el
 plano de datos —eBPF (GKE Dataplane V2 observability), o los access logs de un
 service mesh—, y eso es una decisión de arquitectura del Módulo A, no un ajuste
 de umbral aquí.
+
+---
+
+## 16. Merge de `main` (Módulo D) — qué afectó al Módulo C
+
+Merge de `origin/main` en `modulo-c-network-security` el 2026-09-01, tras la
+entrada del Módulo D (chaos engineering).
+
+**Un solo conflicto**, en `.gitignore`, y trivial: ambas ramas solo añadían
+líneas. Se conservaron las dos (`**/.terraform/` del Módulo C y `.tools/` del
+Módulo D). Nada de `infrastructure/gcp-modulo-c/` entró en conflicto: el módulo
+vive en directorios propios, que era exactamente el objetivo de §4.
+
+### Lo que sí cambió y había que revisar
+
+| Cambio del Módulo D | ¿Afecta al Módulo C? |
+|---|---|
+| `helm/data-service/values.yaml`: `fullnameOverride: data-service` | **Sí.** El Service pasó de `data-service-data-service` a `data-service` |
+| Puertos de los tres servicios (8000 / 8001 / 8080) | **No.** Sin cambios → `ew_allowed_ports` sigue siendo correcto |
+| `helm/otel-stack/templates/collector.yaml`: exporter `googlecloud` condicional | **No.** SEC-6 ya está desactivada por `var.enable_cve_alert = false` (§13) |
+| `chaos/`, runbooks, evidencias del Módulo D | No |
+
+**Corregido tras el merge**, verificado contra el clúster (`kubectl get svc -n
+services` devuelve `data-service`):
+
+- `scripts/modulo-c-validacion.sh` — `SVC_DATA` apuntaba al nombre viejo.
+- `docs/MODULO-C-CAMBIOS.md` §3 — la tabla del entorno decía el nombre viejo.
+
+Ningún cambio de Terraform fue necesario: el módulo no referencia nombres de
+Service, y los puertos —que sí referencia— no cambiaron.
+
+### Comprobación posterior al merge
+
+`terraform plan` sobre el estado desplegado: **0 to add, 0 to destroy**.
+
+Reporta **1 change** de forma permanente, en el dashboard. No es deriva real:
+Google normaliza el JSON del lado del servidor y Terraform ve un diff que
+reaparece después de cada apply. Es un comportamiento conocido de
+`google_monitoring_dashboard` con `jsonencode`. Se documenta para que nadie
+pierda tiempo persiguiéndolo.
