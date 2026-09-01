@@ -32,7 +32,7 @@ aplicado desde Cloud Shell con la cuenta `jorgeayva@unisabana.edu.co`:
 | Alerta **SEC-4** Conexiones denegadas | ✅ Creada | `alertPolicies/10116743042310907219` |
 | Alerta **SEC-5** Egress anómalo | ✅ Creada | `alertPolicies/17773790989406348272` |
 | Alerta **SEC-6** CVE crítico | ⛔ **No creada** | Bloqueada por dependencia externa. Ver §13 |
-| Alerta **SEC-7** Postura de GKE | ✅ Creada | `alertPolicies/7308953874817893225` |
+| Alerta **SEC-7** Postura de GKE | ✅ Creada y **corregida** | `alertPolicies/15985890209018410774` — ver §17 |
 | **Dashboard** Golden Signals de Seguridad | ✅ Creado | `dashboards/c91eb981-9525-4fc8-9aa6-9ba9932e04ed` |
 | GSA `dev-security-exporter` + Workload Identity | ✅ Creada | roles `containeranalysis.occurrences.viewer`, `artifactregistry.reader` |
 | Deployment `security-exporter` (namespace `observability`) | ✅ Corriendo | imagen `us-central1-docker.pkg.dev/…/otel-lab/security-exporter:1.0.0`, sondeo OK: *"8 series de CVE"* |
@@ -655,3 +655,95 @@ Google normaliza el JSON del lado del servidor y Terraform ve un diff que
 reaparece después de cada apply. Es un comportamiento conocido de
 `google_monitoring_dashboard` con `jsonencode`. Se documenta para que nadie
 pierda tiempo persiguiéndolo.
+
+---
+
+## 17. SEC-7 avisaba cuando los problemas SE ARREGLABAN
+
+Detectado el 2026-09-01 a partir de un correo que llegó **después** de dar el
+módulo por terminado. El propio correo contenía la pista:
+
+> GKE Security Posture detecto **(null)** con severidad **(null)** en un
+> workload del cluster.
+
+Dos defectos independientes, ambos reales.
+
+### Defecto 1 — los extractores apuntaban a campos inexistentes
+
+La estructura real del registro, leída del proyecto:
+
+```json
+{
+  "finding":      "RUN_AS_NONROOT",
+  "type":         "FINDING_TYPE_MISCONFIG",
+  "severity":     "SEVERITY_MEDIUM",
+  "state":        "ACTIVE",
+  "resourceName": "apps/v1/namespaces/services/Deployment/data-service"
+}
+```
+
+Se extraía de `jsonPayload.misconfig.severity` y `jsonPayload.finding.type`.
+Ninguno de los dos existe: `finding` es un **string**, no un objeto, y
+`severity` está en la raíz. De ahí los `(null)`.
+
+Una alerta que no dice **qué** encontró ni **dónde** no es una alerta: es una
+interrupción. Corregido, y añadida la etiqueta `resource` para que el correo
+nombre el workload afectado.
+
+### Defecto 2 — contaba los hallazgos REMEDIADOS
+
+El filtro no restringía `state`, así que la métrica contaba por igual los
+`ACTIVE` y los `REMEDIATED`. Es decir: **avisaba cuando un problema se
+arreglaba con la misma urgencia que cuando aparecía.**
+
+Los 8 hallazgos de las 12 h previas lo muestran:
+
+| Estado | Recurso | Origen |
+|---|---|---|
+| `REMEDIATED` ×2 | `Pod/modulo-c-probe` | Se borró el pod de sondeo tras la validación |
+| `REMEDIATED` ×2 | `Deployment/data-service-data-service` | El renombrado del Módulo D eliminó el Deployment viejo |
+| `ACTIVE` ×2 | `Pod/modulo-c-probe` | La sonda mientras existió |
+| `ACTIVE` ×2 | `Deployment/data-service` | **Hallazgo real y vigente** |
+
+O sea: los correos posteriores al cierre del módulo los provocó **nuestro
+propio trabajo de limpieza**. Añadido `jsonPayload.state="ACTIVE"` al filtro.
+
+### Nota de aplicación
+
+Añadir una etiqueta a una métrica basada en logs obliga a **recrearla**, y
+Cloud Monitoring rechaza borrar una métrica en uso:
+
+```
+Cannot delete metric security/gke_posture_findings.
+That metric is still used in an alerting policy.
+```
+
+La secuencia correcta es destruir primero la alerta que la consume:
+
+```bash
+terraform destroy -target=google_monitoring_alert_policy.gke_posture
+terraform apply
+```
+
+SEC-7 cambió de ID al recrearse (`15985890209018410774`). Nada más depende de
+ella.
+
+### Lo que queda vivo, y es correcto que siga vivo
+
+`Deployment/data-service` tiene **`RUN_AS_NONROOT`** y
+**`PRIVILEGE_ESCALATION`**, severidad `SEVERITY_MEDIUM`, en estado `ACTIVE`.
+Es un hallazgo legítimo de postura y **SEC-7 seguirá notificándolo mientras
+exista**: eso no es ruido, es la alerta haciendo su trabajo.
+
+El arreglo no pertenece al Módulo C —es el chart `helm/data-service` de otro
+módulo— y son dos líneas:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+```
+
+Con `auto_close = 86400s`, el incidente permanece abierto 24 h en lugar de
+abrirse y cerrarse repetidamente, así que la notificación es como mucho diaria
+mientras el hallazgo siga sin corregir.

@@ -558,10 +558,40 @@ resource "google_logging_metric" "gke_posture_findings" {
   name        = "security/gke_posture_findings"
   description = "Modulo C — hallazgos de auditoria de configuracion de workloads de GKE Security Posture"
 
+  # ----------------------------------------------------------------------------
+  # CORREGIDA EL 2026-09-01, despues de recibir correos de SEC-7 inutiles
+  #
+  # Dos defectos, ambos visibles en el propio correo de alerta, que decia:
+  #
+  #     "GKE Security Posture detecto (null) con severidad (null)"
+  #
+  #   1) Los dos extractores apuntaban a campos que NO EXISTEN. La estructura
+  #      real del registro, leida del proyecto:
+  #
+  #        { "finding": "RUN_AS_NONROOT",           <- string, no objeto
+  #          "type": "FINDING_TYPE_MISCONFIG",
+  #          "severity": "SEVERITY_MEDIUM",         <- en la raiz
+  #          "state": "ACTIVE" | "REMEDIATED",
+  #          "resourceName": "core/v1/namespaces/services/Pod/..." }
+  #
+  #      Se extraia de 'jsonPayload.misconfig.severity' y 'jsonPayload.finding.type',
+  #      que no existen: de ahi los (null). Una alerta que no dice QUE encontro
+  #      ni DONDE no es una alerta, es una interrupcion.
+  #
+  #   2) No filtraba por 'state', asi que contaba tambien los REMEDIATED —
+  #      es decir, avisaba cuando un problema SE ARREGLABA con la misma
+  #      urgencia que cuando aparecia. Observado: borrar un pod de sondeo y
+  #      el renombrado de data-service por el Modulo D generaron cuatro
+  #      REMEDIATED que dispararon la alerta sin que hubiera nada que mirar.
+  #
+  # Se anade tambien 'resource', porque saber que hay un RUN_AS_NONROOT sin
+  # saber en que workload obliga a ir a buscarlo a mano.
+  # ----------------------------------------------------------------------------
   filter = <<-EOT
     resource.type="k8s_cluster"
     resource.labels.cluster_name="${data.google_container_cluster.otel_cluster.name}"
     jsonPayload.@type="type.googleapis.com/cloud.kubernetes.security.containersecurity_logging.Finding"
+    jsonPayload.state="ACTIVE"
   EOT
 
   metric_descriptor {
@@ -572,18 +602,24 @@ resource "google_logging_metric" "gke_posture_findings" {
     labels {
       key         = "severity"
       value_type  = "STRING"
-      description = "Severidad del hallazgo"
+      description = "Severidad del hallazgo (SEVERITY_LOW / MEDIUM / HIGH / CRITICAL)"
     }
     labels {
       key         = "finding_type"
       value_type  = "STRING"
-      description = "Tipo de hallazgo de configuracion"
+      description = "Hallazgo concreto (RUN_AS_NONROOT, PRIVILEGE_ESCALATION, ...)"
+    }
+    labels {
+      key         = "resource"
+      value_type  = "STRING"
+      description = "Workload afectado, en la forma apps/v1/namespaces/<ns>/Deployment/<nombre>"
     }
   }
 
   label_extractors = {
-    severity     = "EXTRACT(jsonPayload.misconfig.severity)"
-    finding_type = "EXTRACT(jsonPayload.finding.type)"
+    severity     = "EXTRACT(jsonPayload.severity)"
+    finding_type = "EXTRACT(jsonPayload.finding)"
+    resource     = "EXTRACT(jsonPayload.resourceName)"
   }
 
 }
