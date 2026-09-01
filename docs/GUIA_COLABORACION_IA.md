@@ -1,11 +1,11 @@
-# 🤖 Guía de Colaboración con IA — Pipeline de Observabilidad OTel Lab
+# 🤖 Guía de Colaboración con IA y Despliegue — Pipeline de Observabilidad OTel Lab
 
-Esta guía contiene los requisitos previos, el flujo de trabajo de despliegue y los **prompts exactos** (listos para copiar y pegar) para que cualquier miembro del equipo pueda interactuar con un asistente de IA y realizar tareas de:
-- Despliegue y actualización de infraestructura en **Google Cloud Platform (GCP)** con **Terraform**.
+Esta guía contiene los requisitos previos, la secuencia completa de despliegue desde cero y los **prompts exactos** (listos para copiar y pegar) para que cualquier miembro del equipo pueda interactuar con un asistente de IA y realizar tareas de:
+- Despliegue completo y actualización de infraestructura en **Google Cloud Platform (GCP)** con **Terraform**.
 - Compilación y publicación de imágenes de microservicios con **Google Cloud Build** hacia **Artifact Registry**.
 - Despliegue y actualización de aplicaciones y observabilidad con **Helm** en **GKE**.
 - Inyección de experimentos de **Chaos Engineering** y validación de resiliencia / SLOs.
-- Monitoreo, dashboards RED y correlación de alertas AIOps.
+- Ejecución de iniciativas del **Roadmap de Madurez del Observability Blueprint (8 Dominios)**.
 
 ---
 
@@ -23,7 +23,7 @@ Antes de solicitar tareas a la IA, el desarrollador debe asegurarse de autentica
    ```powershell
    gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-546ee9f1-20e7-4368-919
    ```
-3. **Verificar que `kubectl` y `helm` estén comunicándose:**
+3. **Verificar que `kubectl` y `helm` estén comunicándose con el clúster:**
    ```powershell
    kubectl get nodes
    helm list -A
@@ -42,7 +42,52 @@ Antes de solicitar tareas a la IA, el desarrollador debe asegurarse de autentica
 
 ---
 
-## 🎯 3. Prompts Listos para Usar con la IA
+## 🚀 3. Flujo Paso a Paso de Despliegue desde Cero (GCP End-to-End)
+
+Si se desea replicar o desplegar la arquitectura completa en un nuevo proyecto de GCP:
+
+```text
+[1. Terraform IaC] ──► [2. Cloud Build] ──► [3. Secrets & Mesh] ──► [4. Helm Releases] ──► [5. Validación]
+ VPC, GKE, SQL          Imágenes Docker      mTLS & Namespaces       Stack & Services        Traces & Metrics
+```
+
+1. **Paso 1: Infraestructura Base con Terraform**
+   ```powershell
+   cd infrastructure/gcp
+   terraform init
+   terraform apply -auto-approve
+   cd ../..
+   ```
+2. **Paso 2: Conectar `kubectl` al nuevo clúster**
+   ```powershell
+   gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-546ee9f1-20e7-4368-919
+   ```
+3. **Paso 3: Compilar y Subir Imágenes con Cloud Build**
+   ```powershell
+   gcloud builds submit --tag us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/service-a:latest ./services/service-a
+   gcloud builds submit --tag us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/service-b:latest ./services/service-b
+   gcloud builds submit --tag us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/data-service:latest ./services/data-service
+   ```
+4. **Paso 4: Crear Namespaces y Secretos de Kubernetes**
+   ```powershell
+   kubectl create namespace services --dry-run=client -o yaml | kubectl apply -f -
+   kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl create secret generic service-a-db-secret -n services --from-literal=database-url="postgresql://postgres:OtelLab2024!@10.40.0.2:5432/labdb" --dry-run=client -o yaml | kubectl apply -f -
+   kubectl create secret generic service-b-db-secret -n services --from-literal=database-url="postgresql://postgres:OtelLab2024!@10.40.0.2:5432/labdb" --dry-run=client -o yaml | kubectl apply -f -
+   kubectl create secret generic data-service-db-credentials -n services --from-literal=cloud_sql_dsn="postgresql://postgres:OtelLab2024!@10.40.0.2:5432/labdb" --from-literal=aws_rds_dsn="postgresql://postgres:OtelLab2024!@rds-sim.services.svc.cluster.local:5432/rds_sim_db" --dry-run=client -o yaml | kubectl apply -f -
+   ```
+5. **Paso 5: Desplegar Observabilidad y Microservicios con Helm**
+   ```powershell
+   helm upgrade --install otel-stack ./helm/otel-stack -n observability
+   helm upgrade --install service-a ./helm/service-a -n services --set image.repository=us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/service-a --set image.tag=latest
+   helm upgrade --install service-b ./helm/service-b -n services --set image.repository=us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/service-b --set image.tag=latest
+   helm upgrade --install data-service ./helm/data-service -n services --set image.repository=us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/data-service --set image.tag=latest --set db.cloudSqlDsn="postgresql://postgres:OtelLab2024!@10.40.0.2:5432/labdb"
+   ```
+
+---
+
+## 🎯 4. Prompts Listos para Usar con la IA
 
 ### 🅰️ Escenario: Modificar o Actualizar la Infraestructura (Terraform)
 > **Prompt para la IA:**
@@ -85,7 +130,7 @@ Antes de solicitar tareas a la IA, el desarrollador debe asegurarse de autentica
 ### 🅳 Escenario: Ejecutar Experimentos de Chaos Engineering (Módulo D)
 > **Prompt para la IA:**
 > ```text
-> "Necesito ejecutar una prueba de Chaos Engineering para validar resiliencia y MTTD de alertas. Por favor:
+> "Necesito ejecutar una prueba de Chaos Engineering en el sandbox dedicado (kind-otel-chaos) para validar resiliencia y MTTD de alertas. Por favor:
 > 1. Configura el experimento [D1: inyección de 200ms de latencia en service-b / D2: 10% de errores HTTP 500 en data-service].
 > 2. Inicia la carga con k6 usando los scripts en chaos/load/.
 > 3. Verifica la activación de la alerta en Prometheus/Grafana y mide el tiempo de detección (MTTD objetivo < 2 min).
@@ -117,7 +162,20 @@ Antes de solicitar tareas a la IA, el desarrollador debe asegurarse de autentica
 
 ---
 
-## 🛡️ 4. Reglas de Oro del Proyecto (Architecture & Security Guidelines)
+### 🅶 Escenario: Ejecutar Tareas del Roadmap de Madurez (Hacia Nivel 5)
+> **Prompt para la IA:**
+> ```text
+> "Necesito implementar la siguiente iniciativa del Roadmap de Madurez de Observabilidad a 3 Meses (docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md):
+> [ESCRIBE TU TAREA AQUÍ, ej: Habilitar Exemplars en Prometheus / Instalar Kiali para Service Map / Configurar Canary Rollout con Flagger].
+> Por favor:
+> 1. Revisa los requerimientos técnicos en docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md.
+> 2. Aplica los cambios en los manifiestos de Helm o en el código fuente.
+> 3. Valida el funcionamiento y actualiza la matriz de madurez en docs/AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md."
+> ```
+
+---
+
+## 🛡️ 5. Reglas de Oro del Proyecto (Architecture & Security Guidelines)
 
 Al solicitar cambios a la IA, asegúrate de que respete estas directrices estructurales:
 
@@ -129,3 +187,4 @@ Al solicitar cambios a la IA, asegúrate de que respete estas directrices estruc
 | **Proveedor Cloud** | El entorno productivo se ejecuta exclusivamente en **Google Cloud Platform (GCP)** (GKE + Cloud SQL + Artifact Registry). |
 | **Seguridad de Credenciales** | Ninguna contraseña o string de conexión en texto plano en Git; usar Kubernetes Secrets o GCP Secret Manager. |
 | **Service Mesh** | Comunicación interna cifrada con mTLS STRICT vía Envoy sidecars de Istio. |
+| **Aislamiento de Caos** | Experimentos de caos ejecutados exclusivamente en el sandbox local `kind-otel-chaos`, nunca en GKE compartido. |
