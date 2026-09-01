@@ -57,4 +57,9 @@ Thumbs.db
 # Documentation build intermediates
 docs/*.docx
 docs/*.html
+
+# Terraform (local)
+**/.terraform/
+
+# Herramientas locales (Modulo D)
 .tools/

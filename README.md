@@ -538,3 +538,97 @@ Los mismos manifiestos quedan listos para aplicarse contra el clúster GKE real 
 3. **Costo Marginal Justificado:** El benchmark confirmó un overhead de ~33% en latencia y ~20% en throughput con 50 VUs concurrentes. Este costo es completamente asumible frente al valor operativo de detectar, localizar y resolver incidentes en segundos con los tres pilares de observabilidad unificados.
 4. **IaC Reproducible:** Toda la infraestructura (GKE, Cloud SQL, Artifact Registry) está definida en Terraform versionado. Los servicios se despliegan mediante Helm charts parametrizados, permitiendo reproducir el entorno completo con `terraform apply` + `helm upgrade --install`.
 
+
+
+---
+
+## 13. Observabilidad de Red y Seguridad (Módulo C)
+
+Documentación completa: **[`docs/MODULO-C-NETWORK-SECURITY.md`](docs/MODULO-C-NETWORK-SECURITY.md)**
+
+Este módulo añade la capa que faltaba al sistema observable: **quién habla con quién por la red, quién intenta entrar sin permiso y qué vulnerabilidades corren en producción.**
+
+> **Aislamiento.** El Módulo C es un root module independiente en `infrastructure/gcp-modulo-c/`, con su propio state. Lee la infraestructura de los Módulos A/B con *data sources* — nunca con `resource` — así que Terraform no puede modificarla ni destruirla, y `terraform destroy` ahí borra únicamente el Módulo C. Esto no es una preferencia de estilo: `infrastructure/gcp/` tiene el backend remoto comentado y su `.tfstate` no está en el repositorio, de modo que aplicar desde ahí con un clon limpio intentaría **recrear** la VPC, el clúster y Cloud SQL. Lo poco que sí requiere tocar recursos ajenos —habilitar los flow logs en la subred— está documentado sin aplicar en [`PARCHE-modulo-a.md`](infrastructure/gcp-modulo-c/PARCHE-modulo-a.md). Registro completo de cambios y reversión: [`docs/MODULO-C-CAMBIOS.md`](docs/MODULO-C-CAMBIOS.md).
+
+### 13.1 Premisa de diseño
+
+Un flujo de red sin frontera que cruzar no es observable. VPC Flow Logs por sí solo dice que `10.48.2.7` habló con `10.48.1.3` en el puerto 8080 — información verdadera y prácticamente inútil para seguridad, porque en una red plana una llamada legítima y un movimiento lateral **se ven exactamente igual**. Por eso el módulo instala primero las fronteras y después los sensores:
+
+| Capa | Qué instala | Qué señal produce |
+|---|---|---|
+| **Frontera** | `AuthorizationPolicy` del mesh, reglas de firewall con logging, Data Access audit logs | Los eventos de rechazo que después se miden |
+| **Señal** | 9 métricas basadas en logs + 3 métricas OTel del `security-exporter` | Series temporales alertables |
+| **Dashboard** | Cloud Monitoring (L3/L4) + Grafana (L7) | Golden Signals de Seguridad |
+
+La capa de frontera activa son las **reglas de firewall con logging** y los **Cloud Audit Logs**: son las que producen los eventos de rechazo que después se miden. [`security/opcional-istio/authorization-policy.yaml`](security/opcional-istio/authorization-policy.yaml) añadiría una segunda fuente —los `403 RBAC_ACCESS_DENIED` del mesh— pero **es opcional y no se puede aplicar hoy**: Istio no está instalado en `dev-otel-cluster`. Queda lista para cuando el Módulo A despliegue el mesh.
+
+> ⚠️ Si algún día se aplica, va **en dos pasos**: primero [`authorization-policy-dryrun.yaml`](security/opcional-istio/authorization-policy-dryrun.yaml), que evalúa las reglas sin bloquear nada, y solo tras comprobar que ningún tráfico legítimo aparece denegado en la sombra se pasa al modo aplicación. La matriz de puertos, labels y namespaces está verificada contra los charts reales y contra el clúster: los servicios escuchan en 8000, 8001 y 8080, y `data-service`/`rds-sim` viven en el namespace `services`.
+
+> **Registro de cambios y guía de reversión:** [`docs/MODULO-C-CAMBIOS.md`](docs/MODULO-C-CAMBIOS.md) documenta qué archivos se tocaron, qué se activa en GCP al aplicar y cómo revertir cada cosa.
+
+### 13.2 VPC Flow Logs
+
+| | GCP | AWS |
+|---|---|---|
+| Habilitación | `log_config` en la subred del clúster ([`PARCHE-modulo-a.md`](infrastructure/gcp-modulo-c/PARCHE-modulo-a.md)) | `aws_flow_log` sobre la VPC ([`vpc-flow-logs.tf`](infrastructure/aws/vpc-flow-logs.tf)) |
+| Destino caliente | Cloud Logging | CloudWatch Logs |
+| Destino frío | — | S3 en Parquet particionado (Athena) |
+| Estado | **Aplicado** | Codificado y validado, **no aplicado** (sin cuenta AWS; el trabajo se hace sobre GCP) |
+| Agregación | `INTERVAL_30_SEC` | 60 s |
+| Muestreo | `1.0` — **sin muestreo** | completo |
+| Metadatos | `INCLUDE_ALL_METADATA` (aporta `src_gke_details`, `dest_location`, ASN) | formato extendido con `pkt-srcaddr` / `flow-direction` |
+
+Dos decisiones que merecen justificación:
+
+- **Sin muestreo.** Un flujo malicioso suele ser un único flujo de pocos bytes; con `flow_sampling = 0.5` se pierde la mitad de las veces. El control de costo se hace **filtrando ruido conocido** (health checkers de GCP, que en un clúster GKE pueden ser >40 % de los registros) **no muestreando señal**.
+- **Visibilidad intranodo, disponible pero desactivada por defecto** ([`PARCHE-modulo-a.md`](infrastructure/gcp-modulo-c/PARCHE-modulo-a.md)): VPC Flow Logs no registra el tráfico entre pods del mismo nodo. Activarla lo resuelve, pero en un clúster ya en funcionamiento dispara una actualización continua de los nodos, así que es una decisión que se programa, no un default. Mientras tanto el panel L7 de Grafana sí ve ese tráfico, porque los sidecars lo interceptan antes de llegar a la red.
+
+### 13.3 Alertas de tráfico anómalo entre servicios
+
+Siete políticas ([`security-alerts.tf`](infrastructure/gcp-modulo-c/security-alerts.tf)), con dos filosofías de detección deliberadamente distintas:
+
+| Alerta | Detección | Umbral |
+|---|---|---|
+| **SEC-1** Autenticación fallida (plano de control + mesh) | Umbral | > 5 / 5 min |
+| **SEC-2** Flujo E-W hacia puerto fuera de la matriz autorizada | Determinista | > 0 |
+| **SEC-3** Volumen E-W desviado del baseline | **Baseline móvil** (`ALIGN_PERCENT_CHANGE`) | +300 % vs. ventana anterior |
+| **SEC-4** Conexiones denegadas por el firewall | Umbral | > 10 / 5 min |
+| **SEC-5** Egress anómalo a Internet | Baseline móvil **+** p99 absoluto | +300 % · p99 > 50 MB |
+| **SEC-6** CVE crítico activo | Determinista | > 0 |
+| **SEC-7** Hallazgo de configuración de GKE | Determinista | > 0 |
+
+SEC-2 y SEC-3 son complementarias, no redundantes: la determinista detecta *un flujo que no debería existir* (precisión ≈ 1.0, recall bajo); la estadística detecta *un flujo legítimo en volumen ilegítimo* (recall alto). Ninguna de las dos cubre sola el plano de la otra.
+
+Coherente con el **ADR-002**, las alertas volumétricas no usan umbral estático: el 35 % de los falsos positivos medidos allí venía de estacionalidad que ningún umbral fijo puede cubrir. Toda política incluye `documentation` con los labels de la serie que disparó y los pasos concretos de investigación — una alerta que no dice qué mirar no es accionable.
+
+### 13.4 Security Command Center — restricción y plan B
+
+**SCC solo se puede activar sobre una organización**, incluida la activación "a nivel de proyecto". Un proyecto creado bajo una cuenta personal queda en *No organization* y SCC no es activable en él. El código está condicionado a `var.scc_organization_id`; sin ella, el módulo despliega una cobertura equivalente que sí funciona:
+
+| Capacidad de SCC | Sustituto sin organización |
+|---|---|
+| Vulnerability Assessment | Artifact Analysis (escaneo on-push de imágenes) |
+| Security Health Analytics | GKE Security Posture (auditoría de configuración) |
+| Event Threat Detection | Métricas de log sobre Cloud Audit Logs |
+| Findings API centralizada | Cloud Monitoring + dashboard del módulo |
+
+El enunciado permite elegir SCC **o** Security Hub. La ruta de AWS —Security Hub CSPM + FSBP + CIS + GuardDuty + Inspector ([`security-hub.tf`](infrastructure/aws/security-hub.tf))— **se habilita por cuenta, sin organización**, y queda codificada y validada aunque no aplicada, por la misma ausencia de cuenta AWS ya documentada en §9.
+
+### 13.5 Dashboard "Golden Signals de Seguridad"
+
+El entregable es el dashboard de **Cloud Monitoring** ([plantilla](infrastructure/gcp-modulo-c/dashboards/security-golden-signals.json.tftpl)), porque es el único que puede mostrar las tres señales con datos reales hoy:
+
+1. **Intentos de autenticación fallidos** — `PERMISSION_DENIED`/`UNAUTHENTICATED` en Cloud Audit Logs. Se habilitan los Data Access logs solo para Secret Manager: es donde vive la DSN de la base de datos, la señal con más valor forense y menos ruido del proyecto.
+2. **Tráfico N-S / E-W** — la separación no es por convención: solo los extremos externos a Google Cloud llevan anotación geográfica (`src_location` / `dest_location` con país y ASN), y ese es el criterio exacto que los distingue.
+3. **CVEs activos** — vía [`services/cve-exporter/`](services/cve-exporter/), que consulta Artifact Analysis y publica los hallazgos **como métricas OTel** hacia el Collector existente. Coherente con el ADR-001: el exportador habla OTLP y el Collector decide el destino.
+
+Había construido además un panel equivalente en Grafana sobre métricas de Istio. **Se retiró**: sin mesh esas series no existen y Prometheus solo scrapea el OTel Collector, así que habría salido vacío. Un dashboard que no pinta nada es peor que no entregarlo.
+
+### 13.6 Validación
+
+[`scripts/modulo-c-validacion.sh`](scripts/modulo-c-validacion.sh) inyecta cuatro comportamientos anómalos controlados —movimiento lateral bloqueado por RBAC, conexión E-W a puerto no autorizado, egress a puerto de C2 e intento de lectura del secreto de la base de datos— y mide el retardo hasta que cada uno es visible en Cloud Logging, que es el primer sumando del MTTD:
+
+```text
+MTTD = t_visible_en_logs  +  t_agregación_métrica  +  t_evaluación_alerta
+       (medido, ~30-60 s)    (≤ 60 s)                 (60 s SEC-2 / 300 s resto)
+```

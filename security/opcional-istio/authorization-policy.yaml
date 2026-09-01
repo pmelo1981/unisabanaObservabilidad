@@ -1,0 +1,175 @@
+# ==============================================================================
+# Modulo C — Politica de autorizacion zero-trust del mesh (MODO APLICACION)
+# ==============================================================================
+# ⚠️  ESTADO EN EL CLUSTER REAL (dev-otel-cluster, verificado en consola):
+#     Istio NO esta instalado. No existe el namespace istio-system ni istiod,
+#     por lo que los CRD de security.istio.io tampoco existen y este archivo
+#     NO se puede aplicar todavia: 'kubectl apply' fallara con
+#     "no matches for kind AuthorizationPolicy".
+#
+#     Eso NO es un fallo de este modulo: el despliegue del mesh pertenece al
+#     Modulo A y el README §10 ya documenta que quedo validado en un cluster
+#     kind local y pendiente de aplicar en GKE. Este archivo queda listo para
+#     el momento en que se instale.
+#
+#     Mientras tanto, el Modulo C funciona igualmente: las senales de red y de
+#     plano de control (VPC Flow Logs, firewall logs, Cloud Audit Logs,
+#     Artifact Analysis, GKE Security Posture) no dependen de Istio. Lo unico
+#     que queda sin fuente es la senal de autenticacion fallida a nivel de
+#     APLICACION (metrica security/failed_auth_workload) y el dashboard L7 de
+#     Grafana. Ver docs/MODULO-C-CAMBIOS.md.
+#
+# ⚠️  NO APLIQUES ESTE ARCHIVO DIRECTAMENTE SOBRE UN CLUSTER EN USO.
+#     Aplica primero mesh/authorization-policy-dryrun.yaml, comprueba durante
+#     unos minutos que NO hay denegaciones de trafico legitimo, y solo despues
+#     aplica este. El procedimiento completo esta en
+#     docs/MODULO-C-NETWORK-SECURITY.md §9.
+#
+#     Una AuthorizationPolicy con 'spec: {}' deniega TODO el trafico entrante
+#     del namespace. Si un selector o un puerto no coincide con la realidad del
+#     despliegue, el resultado no es una alerta: es una caida total.
+#
+# ------------------------------------------------------------------------------
+# Este archivo cumple una doble funcion, y la segunda es la que interesa al
+# modulo de observabilidad:
+#
+#   1. CONTROL: cierra el trafico este-oeste a la matriz de comunicacion
+#      estrictamente necesaria. Con PeerAuthentication STRICT ya sabemos QUIEN
+#      habla (identidad SPIFFE verificada por mTLS); con estas politicas
+#      decidimos QUIEN PUEDE hablar con quien.
+#
+#   2. SENSOR: cada peticion rechazada produce un 403 con
+#      response_flags="RBAC_ACCESS_DENIED" en el access log JSON del sidecar
+#      Envoy. Ese log es la fuente de la metrica security/failed_auth_workload
+#      y, por tanto, del Golden Signal "intentos de autenticacion fallidos" a
+#      nivel de aplicacion.
+#
+#      Sin esta politica, un intento de movimiento lateral entre pods seria una
+#      peticion HTTP 200 perfectamente normal: no habria nada que observar.
+#
+# ------------------------------------------------------------------------------
+# MATRIZ DE COMUNICACION AUTORIZADA
+# Verificada contra los charts de helm/ (labels, puertos y ServiceAccounts
+# reales del despliegue, no supuestos):
+#
+#   Internet ─────► service-a     :8000   label app=service-a          ns services
+#   service-a ────► service-b     :8001   label app=service-b          ns services
+#   service-a ────► data-service  :8080   label app.kubernetes.io/name ns services
+#   service-b ────► data-service  :8080
+#   data-service ─► rds-sim       :5432   label app.kubernetes.io/name ns services
+#   (todos) ──────► otel-collector:4317   ns observability, SIN sidecar: fuera
+#                                          del alcance de estas politicas
+#
+# ServiceAccounts reales:
+#   service-a    -> service-a-sa   (helm/service-a/values.yaml)
+#   service-b    -> service-b-sa   (helm/service-b/values.yaml)
+#   data-service -> default        (el chart no define serviceAccountName)
+#
+# Cualquier otro par origen-destino-puerto es, por definicion de esta politica,
+# trafico anomalo.
+# ==============================================================================
+
+# ── 1. Denegacion por defecto en el namespace 'services' ─────────────────────
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-services
+  namespace: services
+spec: {}
+---
+# ── 3. Entrada Norte-Sur: Internet -> service-a :8000 ────────────────────────
+# service-a es el unico servicio expuesto por LoadBalancer. El trafico llega
+# desde IPs de Google Cloud sin identidad SPIFFE, por lo que la regla no puede
+# exigir 'principals': se autoriza por destino (workload + puerto), que es lo
+# correcto para un punto de entrada publico.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-service-a
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["8000"]
+---
+# ── 4. Este-Oeste: service-a -> service-b :8001 ──────────────────────────────
+# 'principals' usa la identidad SPIFFE derivada del ServiceAccount, verificada
+# criptograficamente por mTLS. No es un filtro por IP: un pod que robe la IP de
+# service-a sigue sin poder presentar su certificado.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-service-a-to-service-b
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-b
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/services/sa/service-a-sa"
+      to:
+        - operation:
+            ports: ["8001"]
+---
+# ── 5. Este-Oeste: service-a / service-b -> data-service :8080 ───────────────
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-services-to-data-service
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: data-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/services/sa/service-a-sa"
+              - "cluster.local/ns/services/sa/service-b-sa"
+      to:
+        - operation:
+            ports: ["8080"]
+---
+# ── 6. Acceso a la base de datos simulada 'rds-sim' :5432 ────────────────────
+# Solo data-service puede hablar con PostgreSQL. Si service-a o service-b
+# intentaran ir directo a la base de datos saltandose la capa de datos (un
+# antipatron habitual), quedaria registrado como RBAC_ACCESS_DENIED.
+#
+# En el despliegue real data-service vive en el namespace 'services', junto a
+# service-a y service-b, asi que autorizar "todo el namespace" no restringiria
+# nada. Se autoriza por la identidad concreta de data-service, que al no
+# definir serviceAccountName es la SA 'default' de ese namespace.
+#
+# Efecto colateral util: cualquier pod nuevo que se despliegue en 'services'
+# sin SA propia heredaria esa identidad y podria hablar con la base de datos.
+# Darle una SA propia a data-service (una linea en su chart) cerraria ese
+# hueco, pero eso es un cambio al Modulo A y queda como recomendacion.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-data-service-to-db
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rds-sim
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/services/sa/default"
+      to:
+        - operation:
+            ports: ["5432"]
