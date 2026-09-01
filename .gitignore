@@ -57,3 +57,4 @@ Thumbs.db
 # Documentation build intermediates
 docs/*.docx
 docs/*.html
+.tools/
