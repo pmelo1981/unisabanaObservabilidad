@@ -169,6 +169,108 @@ Se puede entregar el módulo sin activarlo: la limitación queda documentada en
 
 ---
 
+## 5. Collector sin identidad de GCP — **roto hoy, y no es del Módulo C**
+
+> Esto no lo introdujo el Módulo C. Se descubrió al desplegarlo, y afecta a
+> todo el pipeline de métricas del laboratorio, no solo a la parte de
+> seguridad. Va aquí porque el recurso a cambiar pertenece al Módulo A.
+
+### Qué está pasando
+
+El `Deployment/otel-collector` del namespace `observability` corre con la
+ServiceAccount `default`, que **no tiene la anotación de Workload Identity**.
+Con Workload Identity activo en el clúster —y lo está—, el metadata server
+**no** le entrega a esa KSA la identidad del nodo. El pod queda sin ninguna
+identidad de GCP.
+
+Da igual que `dev-gke-nodes-sa` sí tenga `roles/monitoring.metricWriter`: el
+pod nunca llega a usar esa cuenta.
+
+### Cómo se comprueba (evidencia, no deducción)
+
+```
+kubectl logs -n observability deploy/otel-collector --tail=200 | grep googlecloud
+```
+
+Devuelve, cada 10 segundos:
+
+```
+Exporting failed. Dropping data. {"kind":"exporter","data_type":"metrics",
+ "name":"googlecloud","error":"rpc error: code = PermissionDenied
+ desc = Permission monitoring.timeSeries.create denied ..."}
+```
+
+Y el proyecto no tiene **ni un solo** descriptor `workload.googleapis.com/*`:
+
+```
+curl -s -G -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  --data-urlencode 'filter=metric.type=starts_with("workload.googleapis.com/")' \
+  "https://monitoring.googleapis.com/v3/projects/$PROJECT/metricDescriptors"
+```
+
+### Qué significa para la entrega
+
+Ninguna métrica OTel de `service-a`, `service-b`, `data-service` ni del
+`security-exporter` ha llegado nunca a Cloud Monitoring. Llegan solo a
+Prometheus, que es el otro exporter del pipeline — por eso Grafana se ve bien
+y nadie lo había notado.
+
+Consecuencia concreta en el Módulo C: la alerta **SEC-6 (CVE crítico)** no se
+puede crear, porque su métrica no existe en Cloud Monitoring. Está escrita en
+`security-alerts.tf` detrás de `var.enable_cve_alert`, en `false`. El
+`security-exporter` sí funciona (su KSA sí tiene Workload Identity y sondea
+correctamente: *"8 series de CVE"*); sus datos mueren en el mismo punto que
+los de los demás.
+
+### Arreglo
+
+```
+PROJECT=project-546ee9f1-20e7-4368-919
+
+gcloud iam service-accounts create dev-otel-collector \
+  --project=$PROJECT --display-name="OTel Collector"
+
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member="serviceAccount:dev-otel-collector@$PROJECT.iam.gserviceaccount.com" \
+  --role="roles/monitoring.metricWriter"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  dev-otel-collector@$PROJECT.iam.gserviceaccount.com \
+  --project=$PROJECT --role="roles/iam.workloadIdentityUser" \
+  --member="serviceAccount:$PROJECT.svc.id.goog[observability/otel-collector]"
+
+kubectl create serviceaccount otel-collector -n observability
+
+kubectl annotate serviceaccount otel-collector -n observability \
+  iam.gke.io/gcp-service-account=dev-otel-collector@$PROJECT.iam.gserviceaccount.com
+
+kubectl set serviceaccount deployment/otel-collector otel-collector -n observability
+```
+
+El último comando reinicia el pod del collector. Es un rolling update de un
+solo pod, no toca nodos.
+
+**Comprobar que quedó bien** (esperar ~2 min tras el reinicio):
+
+```
+kubectl logs -n observability deploy/otel-collector --tail=50 | grep -c PermissionDenied   # debe dar 0
+
+curl -s -G -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  --data-urlencode 'filter=metric.type=has_substring("security.cves")' \
+  "https://monitoring.googleapis.com/v3/projects/$PROJECT/metricDescriptors"
+```
+
+Cuando el descriptor aparezca, activar SEC-6:
+
+```
+terraform apply -var="enable_cve_alert=true"
+```
+
+**Revertir:** `kubectl set serviceaccount deployment/otel-collector default -n observability`
+y borrar la GSA. Vuelve exactamente al estado actual (roto, pero el actual).
+
+---
+
 ## Orden recomendado
 
 1. **§1 opción A** — flow logs con `gcloud`. Es lo único obligatorio.
@@ -179,3 +281,6 @@ Se puede entregar el módulo sin activarlo: la limitación queda documentada en
    logs no se apaguen en el próximo apply del Módulo A.
 6. §2 y §4 solo si el equipo decide instalar Istio o abrir ventana de
    mantenimiento.
+7. **§5** — lo decide el dueño del Módulo A. No es opcional en el sentido de
+   "mejora": hoy el pipeline OTel -> Cloud Monitoring no entrega nada. Sin
+   ello, SEC-6 y el panel de CVEs se quedan vacíos.

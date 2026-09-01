@@ -6,6 +6,14 @@
 #   "must specify a restriction on resource.type in the filter"
 # 'terraform validate' NO detecta esto — es una validacion del servidor, no del
 # esquema. Por eso todos los filtros de abajo llevan su resource.type explicito.
+#
+# Segundo hallazgo del apply: 'notification_rate_limit' SOLO se admite en
+# alert policies BASADAS EN LOGS. En una politica de umbral sobre metrica la
+# API responde:
+#   "only log-based alert policies may specify a notification rate limit"
+# Se eliminaron los cinco bloques que lo usaban. El control de ruido queda en
+# 'auto_close' y en el agrupamiento por labels de cada condicion.
+#
 # Terraform — GCP: Modulo C — Politicas de alerta de seguridad
 # ==============================================================================
 # Filosofia de deteccion, heredada del ADR-002 (AIOps):
@@ -108,10 +116,6 @@ resource "google_monitoring_alert_policy" "failed_auth" {
 
   alert_strategy {
     auto_close = "3600s"
-
-    notification_rate_limit {
-      period = "300s"
-    }
   }
 
   documentation {
@@ -174,11 +178,27 @@ resource "google_monitoring_alert_policy" "unexpected_service_pair" {
       threshold_value = 0
       duration        = "60s"
 
+      # NO agrupar por dest_port. Cloud Monitoring abre UN INCIDENTE POR CADA
+      # combinacion distinta de las etiquetas de group_by_fields, y cada
+      # incidente envia un correo al abrirse y otro al cerrarse. dest_port es
+      # una etiqueta de cardinalidad NO ACOTADA: un escaneo de 20 puertos
+      # —que es UN solo evento de seguridad— generaba 20 incidentes y 40
+      # correos.
+      #
+      # Observado en el proyecto el 2026-09-01. Es un defecto DISTINTO del
+      # filtro de la metrica y se habria manifestado igual con el filtro ya
+      # corregido, en cuanto ocurriera un escaneo real; por eso se arregla
+      # aqui y no solo alla.
+      #
+      # Agrupando por el PAR de pods, un escaneo es un unico incidente con la
+      # granularidad que sirve para triage ("quien hablo con quien"). Los
+      # puertos concretos se leen en los logs enlazados desde el incidente,
+      # que es donde hay que mirarlos de todos modos.
       aggregations {
         alignment_period     = "60s"
         per_series_aligner   = "ALIGN_DELTA"
         cross_series_reducer = "REDUCE_SUM"
-        group_by_fields      = ["metric.label.src_pod", "metric.label.dest_pod", "metric.label.dest_port"]
+        group_by_fields      = ["metric.label.src_pod", "metric.label.dest_pod"]
       }
 
       trigger {
@@ -195,14 +215,17 @@ resource "google_monitoring_alert_policy" "unexpected_service_pair" {
 
   documentation {
     mime_type = "text/markdown"
-    subject   = "[SEC-2] Flujo E-W no autorizado: $${metric.label.src_pod} -> $${metric.label.dest_pod}:$${metric.label.dest_port}"
+    subject   = "[SEC-2] Flujo E-W no autorizado: $${metric.label.src_pod} -> $${metric.label.dest_pod}"
     content   = <<-EOT
       ## Que paso
 
-      El pod `$${metric.label.src_pod}` abrio una conexion hacia
-      `$${metric.label.dest_pod}` en el puerto `$${metric.label.dest_port}`,
-      que no pertenece a la matriz de comunicacion autorizada del sistema
-      (`var.ew_allowed_ports`).
+      El pod `$${metric.label.src_pod}` abrio una o mas conexiones hacia
+      `$${metric.label.dest_pod}` en puertos que no pertenecen a la matriz de
+      comunicacion autorizada del sistema (`var.ew_allowed_ports`).
+
+      Los puertos concretos NO estan en este correo a proposito: el incidente
+      se agrupa por par de pods para que un escaneo de N puertos sea una
+      alerta y no N. Estan en "VER REGISTROS", en la etiqueta `dest_port`.
 
       ## Por que importa
 
@@ -263,10 +286,6 @@ resource "google_monitoring_alert_policy" "east_west_volume_anomaly" {
 
   alert_strategy {
     auto_close = "1800s"
-
-    notification_rate_limit {
-      period = "600s"
-    }
   }
 
   documentation {
@@ -336,10 +355,6 @@ resource "google_monitoring_alert_policy" "denied_connections" {
 
   alert_strategy {
     auto_close = "3600s"
-
-    notification_rate_limit {
-      period = "600s"
-    }
   }
 
   documentation {
@@ -471,7 +486,39 @@ resource "google_monitoring_alert_policy" "anomalous_egress" {
 # La metrica la publica services/cve-exporter/ via OTLP -> Collector ->
 # Cloud Monitoring, con el prefijo declarado en otel-collector/config-gcp.yaml
 # (custom.googleapis.com/otel).
+#
+# ------------------------------------------------------------------------------
+# BLOQUEADA POR UNA DEPENDENCIA EXTERNA AL MODULO C (verificado 2026-09-01)
+#
+# Esta politica NO se puede crear hoy, y la razon no esta en el Modulo C:
+# el tramo Collector -> Cloud Monitoring del pipeline esta roto en el proyecto.
+#
+#   - El Deployment 'otel-collector' corre con la KSA 'default' del namespace
+#     'observability', que NO tiene la anotacion de Workload Identity.
+#   - Con Workload Identity activo en el cluster, el metadata server no le
+#     entrega a esa KSA la identidad del nodo. El pod se queda SIN identidad
+#     de GCP, aunque 'dev-gke-nodes-sa' si tenga roles/monitoring.metricWriter.
+#   - Resultado, en los logs del collector cada 10 s:
+#       PermissionDenied: monitoring.timeSeries.create denied
+#     y en el proyecto: CERO descriptores 'workload.googleapis.com/*'.
+#
+# Es decir: NINGUNA metrica OTel de NINGUN servicio ha llegado nunca a Cloud
+# Monitoring; solo llegan a Prometheus, que es el otro exporter del pipeline.
+# El security-exporter del Modulo C publica bien (su KSA si tiene Workload
+# Identity y su sondeo funciona: "8 series de CVE"), pero sus datos mueren en
+# el mismo punto que los de los demas.
+#
+# El arreglo pertenece al Modulo A —es su collector— y esta escrito con el
+# comando exacto en PARCHE-modulo-a.md, seccion 5. Mientras no se aplique,
+# esta politica se queda en 'false': crearla haria fallar cada 'terraform
+# apply' con un 404 de metrica inexistente, que es ruido, no informacion.
+#
+# Se deja el codigo escrito y no borrado a proposito: el dia que el Modulo A
+# arregle el collector, esto es cambiar una variable a true y aplicar.
+# ------------------------------------------------------------------------------
 resource "google_monitoring_alert_policy" "critical_cve" {
+  count = var.enable_cve_alert ? 1 : 0
+
   display_name = "[SEC-6] CVE critico activo en una imagen del registro"
   combiner     = "OR"
   severity     = "ERROR"
@@ -502,10 +549,6 @@ resource "google_monitoring_alert_policy" "critical_cve" {
 
   alert_strategy {
     auto_close = "86400s"
-
-    notification_rate_limit {
-      period = "3600s"
-    }
   }
 
   documentation {
@@ -566,10 +609,6 @@ resource "google_monitoring_alert_policy" "gke_posture" {
 
   alert_strategy {
     auto_close = "86400s"
-
-    notification_rate_limit {
-      period = "3600s"
-    }
   }
 
   documentation {

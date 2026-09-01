@@ -25,9 +25,20 @@ aplicado desde Cloud Shell con la cuenta `jorgeayva@unisabana.edu.co`:
 | `security/flow_egress_internet` | ✅ Creada | labels: `dest_country`, `dest_asn`, `dest_port` |
 | `security/flow_unexpected_pair` | ✅ Creada | labels: `src_pod`, `dest_pod`, `dest_port` |
 | Canal de notificación (email) | ✅ Creado | `jorgeayva@unisabana.edu.co` |
-| Alerta **SEC-2** | ✅ Creada | tráfico E-W hacia puerto no autorizado |
+| `security/failed_auth_workload`, `flow_east_west_bytes`, `flow_egress_internet_bytes`, `gke_posture_findings` | ✅ Creadas | resto de métricas basadas en logs (10 en total) |
+| Alerta **SEC-1** Ráfaga de auth fallida | ✅ Creada | `alertPolicies/2821121601167144740` |
+| Alerta **SEC-2** Tráfico E-W no autorizado | ✅ Creada | `alertPolicies/11068496798239839244` — corregida, ver §12 |
+| Alerta **SEC-3** Volumen E-W desviado | ✅ Creada | `alertPolicies/7308953874817893058` |
+| Alerta **SEC-4** Conexiones denegadas | ✅ Creada | `alertPolicies/10116743042310907219` |
+| Alerta **SEC-5** Egress anómalo | ✅ Creada | `alertPolicies/17773790989406348272` |
+| Alerta **SEC-6** CVE crítico | ⛔ **No creada** | Bloqueada por dependencia externa. Ver §13 |
+| Alerta **SEC-7** Postura de GKE | ✅ Creada | `alertPolicies/7308953874817893225` |
+| **Dashboard** Golden Signals de Seguridad | ✅ Creado | `dashboards/c91eb981-9525-4fc8-9aa6-9ba9932e04ed` |
+| GSA `dev-security-exporter` + Workload Identity | ✅ Creada | roles `containeranalysis.occurrences.viewer`, `artifactregistry.reader` |
+| Deployment `security-exporter` (namespace `observability`) | ✅ Corriendo | imagen `us-central1-docker.pkg.dev/…/otel-lab/security-exporter:1.0.0`, sondeo OK: *"8 series de CVE"* |
 
-Pendiente de aplicar: alertas SEC-1, SEC-3, SEC-4, SEC-5 y el dashboard.
+**Falta para cerrar el módulo:** ejecutar `scripts/modulo-c-validacion.sh` para
+la evidencia y la medición de MTTD; y, si el equipo lo decide, SEC-6 (§13).
 
 ### Hallazgo del apply real
 
@@ -70,11 +81,11 @@ a byte** como los dejaron los compañeros.
 
 | Requisito | Dónde | Estado |
 |---|---|---|
-| Habilitar VPC Flow Logs (GCP) | `infrastructure/gcp-modulo-c/PARCHE-modulo-a.md` §1 | Comando listo. **Verificado: hoy están desactivados** |
+| Habilitar VPC Flow Logs (GCP) | `infrastructure/gcp-modulo-c/PARCHE-modulo-a.md` §1 | ✅ **Aplicado y activo** (§0) |
 | Habilitar VPC Flow Logs (AWS) | `infrastructure/aws/` | Codificado y validado, **no aplicado** (se trabaja sobre GCP, no hay cuenta AWS) |
-| Alertas de tráfico anómalo entre servicios | `infrastructure/gcp-modulo-c/security-alerts.tf` → SEC-2, SEC-3, SEC-4, SEC-5 | Listo para aplicar |
+| Alertas de tráfico anómalo entre servicios | `infrastructure/gcp-modulo-c/security-alerts.tf` → SEC-2, SEC-3, SEC-4, SEC-5 | ✅ **Aplicadas.** SEC-2 corregida tras una tormenta de falsos positivos (§12) |
 | Security Command Center **o** AWS Security Hub | `security-command-center.tf` / `infrastructure/aws/security-hub.tf` | Bloqueado por falta de organización → plan B activo (§6) |
-| Dashboard Golden Signals de Seguridad | `dashboards/security-golden-signals.json.tftpl` | Listo para aplicar |
+| Dashboard Golden Signals de Seguridad | `dashboards/security-golden-signals.json.tftpl` | ✅ **Creado.** El panel de CVEs queda vacío hasta que se arregle el collector (§13) |
 
 ---
 
@@ -88,7 +99,7 @@ Todo lo de esta tabla se comprobó directamente en el proyecto, no se supuso.
 | Organización del proyecto | **Ninguna** (`No organization`). Existe `jorgeayva-org` (`1096573089885`) pero el proyecto no está dentro |
 | VPC | `dev-otel-vpc`, modo personalizado |
 | Subred | `dev-gke-subnet`, `us-central1`, `10.0.0.0/20`; secundarios `gke-pods 10.48.0.0/14`, `gke-services 10.52.0.0/20` |
-| **VPC Flow Logs** | **Desactivados** |
+| **VPC Flow Logs** | ✅ **Activos** desde el 2026-09-01 (agregación 30 s, muestreo 1.0, metadatos completos) |
 | Clúster | `dev-otel-cluster`, regional `us-central1`, 6 nodos, 12 vCPU, 48 GB — sano |
 | `var.environment` | **`dev`** (deducido de los nombres, coincide con el Terraform) |
 | Istio | **No instalado** — no existe `istio-system` |
@@ -293,3 +304,136 @@ gcloud logging read 'log_id("compute.googleapis.com/vpc_flows")' \
 El paso 1 no es opcional: sin flow logs el módulo se aplica sin errores pero
 todos los paneles de tráfico quedan vacíos, y nada lo explica. Por eso el script
 de validación aborta con un mensaje explícito si los encuentra apagados.
+
+---
+
+## 12. Tormenta de falsos positivos de SEC-2, y los dos defectos que la causaban
+
+**Qué pasó.** Al poco de aplicar SEC-2 empezó a llegar aproximadamente un correo
+por minuto. Ejemplo real:
+
+```
+src_pod  : otel-stack-kube-state-metrics-5455fd7f6c-gkkfm
+dest_pod : otel-stack-prometheus-server-5555974f8f-r7888
+dest_port: 37936
+```
+
+Tráfico interno y legítimo del stack de observabilidad, marcado como movimiento
+lateral. Este es exactamente el modo de fallo que `variables.tf` advertía para
+`ew_allowed_ports`: *"la reacción natural del operador ante una alerta permanente
+es silenciarla"*. Se cumplió sobre el propio módulo que lo advertía.
+
+Al investigarlo aparecieron **dos defectos independientes**. El segundo estaba
+tapado por el primero.
+
+### Defecto 1 — el filtro contaba la dirección de respuesta
+
+VPC Flow Logs registra **las dos direcciones** de cada conexión como entradas
+distintas, ambas con `reporter="SRC"`. En la dirección de respuesta el puerto de
+destino es el **puerto efímero del cliente** (Linux: 32768–60999), que por
+definición nunca estará en una lista de puertos de servicio.
+
+Consecuencia: toda conversación legítima cuyo puerto de servidor no estuviera en
+la lista **se denunciaba a sí misma** con su propia respuesta.
+
+Además el alcance era todo el clúster, y los namespaces de plataforma hablan
+legítimamente por puertos que no pertenecen —ni deben pertenecer— a la matriz de
+la aplicación: kubelet 10250, pushgateway 9091, node-local-dns 10054.
+
+**Corrección** (`network-security.tf`, métrica `flow_unexpected_pair`):
+
+```
+jsonPayload.dest_gke_details.pod.pod_namespace="${var.app_namespace}"
+jsonPayload.connection.dest_port<32768
+```
+
+**Verificación antes de reactivar, sobre tráfico real del clúster:** el filtro
+corregido devuelve **cero** entradas en 2 horas, y el escenario B de
+`scripts/modulo-c-validacion.sh` (sonda → `data-service:9999`) sigue cayendo
+dentro de él. Es decir: se quitó el ruido sin quitar la señal.
+
+### Defecto 2 — un incidente por cada puerto
+
+Cloud Monitoring abre **un incidente por cada combinación distinta de las
+etiquetas de `group_by_fields`**, y cada incidente manda un correo al abrirse y
+otro al cerrarse. SEC-2 agrupaba por `src_pod`, `dest_pod` **y `dest_port`**.
+
+`dest_port` es una etiqueta de cardinalidad no acotada. Un escaneo de 20 puertos
+—que es **un solo** evento de seguridad— habría producido 20 incidentes y 40
+correos.
+
+Este defecto **no era visible** mientras el defecto 1 lo tapaba, y habría
+estallado igual el día de un escaneo real, que es justo el día en que uno
+necesita que el buzón sea legible.
+
+**Corrección** (`security-alerts.tf`): agrupar por el par de pods. Un escaneo es
+un incidente, con la granularidad que sirve para triage —*quién habló con
+quién*—; los puertos concretos se leen en los logs enlazados desde el incidente,
+que es donde hay que mirarlos de todos modos.
+
+### Nota operativa: Terraform es el dueño de `enabled`
+
+Desactivar la política a mano (`PATCH … {"enabled":false}`) es válido para cortar
+la sangría, pero **el siguiente `terraform apply` la vuelve a activar**, porque
+`enabled` es un campo gestionado. Pasó en este incidente. Si hay que dejar una
+política apagada de forma duradera, se apaga en el código, no en la consola.
+
+### Estado verificado tras la corrección
+
+| Comprobación | Resultado |
+|---|---|
+| Último punto no-cero de la métrica | 08:13:45 |
+| Hora de la comprobación | 08:34:45 |
+| Minutos en cero | **21** |
+| `SEC-2 enabled` | **True** — activa y callada, no silenciada |
+
+### Riesgo análogo pendiente de vigilar
+
+**SEC-4** agrupa por `metric.label.src_ip`, que también es de cardinalidad no
+acotada. No se ha tocado porque su umbral no es 0 (`denied_connections_threshold`
+= 10 en 5 min), lo que amortigua el efecto, y porque `src_ip` es justamente el
+campo útil para triar una denegación de firewall. Pero ante un escaneo
+distribuido produciría un incidente por IP origen. Si eso ocurre, la corrección
+es la misma que la de SEC-2: agrupar solo por `rule`.
+
+---
+
+## 13. SEC-6 no creada: el pipeline OTel → Cloud Monitoring está roto
+
+**No es un defecto del Módulo C, y no lo introdujo el Módulo C.** Se descubrió al
+desplegar el `security-exporter`.
+
+El `Deployment/otel-collector` corre con la KSA `default` del namespace
+`observability`, que **no tiene la anotación de Workload Identity**. Con Workload
+Identity activo —y lo está—, el metadata server no le entrega a esa KSA la
+identidad del nodo: el pod queda **sin identidad de GCP**. Da igual que
+`dev-gke-nodes-sa` sí tenga `roles/monitoring.metricWriter`; el pod nunca llega a
+usar esa cuenta.
+
+Evidencia, cada 10 segundos en los logs del collector:
+
+```
+Exporting failed. Dropping data. {"kind":"exporter","data_type":"metrics",
+ "name":"googlecloud","error":"rpc error: code = PermissionDenied
+ desc = Permission monitoring.timeSeries.create denied ..."}
+```
+
+Y el proyecto no tiene **ni un solo** descriptor `workload.googleapis.com/*`.
+
+**Alcance real, más allá del Módulo C:** ninguna métrica OTel de `service-a`,
+`service-b` ni `data-service` ha llegado nunca a Cloud Monitoring. Llegan solo a
+Prometheus, que es el otro exporter del pipeline — por eso Grafana se ve bien y
+nadie lo había notado.
+
+El `security-exporter` del Módulo C **sí funciona**: su KSA sí tiene Workload
+Identity y su sondeo es correcto (*"8 series de CVE, 0 series de SCC"*). Sus
+datos mueren en el mismo punto que los de los demás.
+
+**Decisión tomada:** no tocarlo. El recurso pertenece al Módulo A y la
+instrucción del proyecto es no modificar lo hecho por otros. SEC-6 queda escrita
+en `security-alerts.tf` detrás de `var.enable_cve_alert = false`, para que el
+`terraform apply` termine limpio en vez de fallar con un 404 en cada ejecución.
+
+El arreglo, con los comandos exactos y su reversión, está en
+`infrastructure/gcp-modulo-c/PARCHE-modulo-a.md` §5. El día que se aplique, SEC-6
+es cambiar una variable a `true` y aplicar.
