@@ -1,4 +1,9 @@
+fullnameOverride: data-service
+
 replicaCount: 1
+
+chaosControl:
+  enabled: false
 
 image:
   repository: your-registry/data-service
@@ -45,14 +50,14 @@ livenessProbe:
   httpGet:
     path: /health
     port: 8080
-  initialDelaySeconds: 5
+  initialDelaySeconds: 25
   periodSeconds: 15
 
 readinessProbe:
   httpGet:
     path: /health
     port: 8080
-  initialDelaySeconds: 5
+  initialDelaySeconds: 15
   periodSeconds: 10
 
 nodeSelector: {}

@@ -75,6 +75,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+CHAOS_CONTROL_ENABLED = os.getenv("CHAOS_CONTROL_ENABLED", "false").lower() == "true"
+
 
 # ── Middleware 1: Chaos Engineering Interceptor ────────────────────────────
 @app.middleware("http")
@@ -156,7 +158,7 @@ class ChaosExperimentRequest(BaseModel):
     latency_ms: float = 0.0
     latency_rate: float = 0.0
     error_rate: float = 0.0
-    error_status_code: int = 503
+    error_status_code: int = 500
     error_message: str = "ChaosEngine: Database connection timeout / pool exhaustion"
 
 
@@ -259,6 +261,8 @@ async def list_federated_records():
 @app.post("/chaos/experiment", tags=["Chaos Engineering"])
 async def set_chaos_experiment(req: ChaosExperimentRequest):
     """Configura e inyecta fallas reales de Chaos Engineering en caliente."""
+    if not CHAOS_CONTROL_ENABLED:
+        raise HTTPException(status_code=403, detail="Chaos control is disabled")
     return chaos_engine.configure(
         scenario=req.scenario,
         latency_ms=req.latency_ms,
@@ -272,12 +276,14 @@ async def set_chaos_experiment(req: ChaosExperimentRequest):
 @app.get("/chaos/status", tags=["Chaos Engineering"])
 async def get_chaos_status():
     """Retorna el estado activo del motor de caos y estadisticas de fallas inyectadas."""
-    return chaos_engine.get_status()
+    return {"control_enabled": CHAOS_CONTROL_ENABLED, **chaos_engine.get_status()}
 
 
 @app.post("/chaos/reset", tags=["Chaos Engineering"])
 async def reset_chaos():
     """Desactiva todas las fallas de caos."""
+    if not CHAOS_CONTROL_ENABLED:
+        raise HTTPException(status_code=403, detail="Chaos control is disabled")
     return chaos_engine.reset()
 
 
