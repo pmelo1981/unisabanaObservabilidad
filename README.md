@@ -13,7 +13,8 @@
 [![k6](https://img.shields.io/badge/k6-v0.53.0-7D64FF?logo=k6)](https://k6.io/)
 [![Istio](https://img.shields.io/badge/Istio-1.23-466BB0?logo=istio)](https://istio.io/)
 [![Guía IA](https://img.shields.io/badge/Gu%C3%ADa%20Colaboraci%C3%B3n-IA%20Prompts-success?logo=openai)](docs/GUIA_COLABORACION_IA.md)
-[![Observability Blueprint](https://img.shields.io/badge/Blueprint%20Madurez-Nivel%204.16-blue?logo=googlecloud)](docs/EVALUACION_OBSERVABILITY_BLUEPRINT.md)
+[![Autoevaluación Blueprint](https://img.shields.io/badge/Blueprint%20Madurez-Nivel%204.16-blue?logo=googlecloud)](docs/AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md)
+[![Roadmap 3 Meses](https://img.shields.io/badge/Roadmap-3%20Meses%20Nivel%204.8-blueviolet?logo=target)](docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md)
 [![Informe Técnico](https://img.shields.io/badge/Informe%20T%C3%A9cnico-PDF-red?logo=adobeacrobatreader)](docs/INFORME_TECNICO.pdf)
 
 ---
@@ -424,7 +425,8 @@ otel-lab/
 │   └── data-service/             # Chart Helm de Data Service (+ rds-sim.yaml)
 │
 ├── docs/                         # Documentación y evidencias
-│   ├── EVALUACION_OBSERVABILITY_BLUEPRINT.md # Autoevaluación 8 dominios y roadmap 3 meses
+│   ├── AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md # Autoevaluación 8 dominios (Nivel 1-5)
+│   ├── ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md  # Plan de trabajo a 90 días (Hacia Nivel 5)
 │   ├── GUIA_COLABORACION_IA.md   # Guía paso a paso y prompts para asistentes de IA
 │   ├── INFORME_TECNICO.pdf       # Informe técnico formal del proyecto (PDF)
 │   └── screenshots/              # Capturas reales de Jaeger, Grafana y Swagger
