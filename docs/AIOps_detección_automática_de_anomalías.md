@@ -5,12 +5,10 @@
 
 | Atributo | Detalle |
 |---|---|
-| **Identificador del Experimento** | `EXP-OTEL-CHAOS-30M-001` |
-| **Fecha y Hora de Ejecución** | 31 de Agosto de 2026 |
 | **Entorno de Prueba** | Local Stack Multi-Container (FastAPI, AsyncPG, PostgreSQL Multi-Cloud, OTel Collector, Prometheus, Grafana, Jaeger) |
 | **Duración del Experimento** | 30 minutos continuos (Dividido en 2 Fases de 15 minutos exactas) |
 | **Tipo de Carga** | Tráfico HTTP 100% real con inyección de fallas mediante **Chaos Engineering a nivel de aplicación** |
-| **Veredicto General** | **EXITOSO** — Reducción del **73.42%** en ruido operacional y eliminación total de falsas alarmas |
+| **Resultado** | **EXITOSO** — Reducción del **73.42%** en ruido operacional y eliminación de falsas alarmas |
 
 ### Resumen Ejecutivo
 El presente informe documenta la evaluación comparativa entre un sistema tradicional de monitoreo basado en **umbrales estáticos rígidos** frente a un sistema avanzado de **Detección Dinámica de Anomalías con Correlación Multi-Señal** ($Z_{\text{error}} \ge 2.0\sigma \land \text{Latencia}_{p99} \ge \text{SLO}_{\text{threshold}}$) en el microservicio `data-service`.
@@ -81,14 +79,14 @@ Muestra el desglose detallado y estado de evaluación de las reglas de alerta ca
 * **Regla 1 (`StaticHighLatencyOrErrors`):** Umbral estático rígido con PromQL `(sum(rate(data_service_db_errors_total[1m])) > 0) or (histogram_quantile(0.99, sum by (le) (rate(data_service_db_query_duration_milliseconds_bucket[1m]))) > 50) or (anomaly_detector_static_firing == 1)`.
 * **Regla 2 (`CorrelatedMultiSignalIncident`):** Regla correlacionada multi-señal con PromQL `(anomaly_detector_correlated_firing == 1) or ((anomaly_detector_error_z_score >= 2) and (anomaly_detector_latency_p99_ms >= 200))`, con anotaciones enriquecidas de enlace a Jaeger UI y al Dashboard de Ops en Grafana.
 
-![Prometheus - Reglas de Alerta y Fórmulas PromQL](evidences/evidence_prometheus_rules.png)
+![Prometheus - Reglas de Alerta y Fórmulas PromQL](screenshots/evidence_prometheus_rules.png)
 
 ---
 
 ### 5.2 Prometheus UI — Gráfica de Z-Score de Error (`http://localhost:9090/graph`)
 Muestra la evolución del $Z$-Score de la tasa de error superando la banda de anomalía crítica ($+2.0\sigma$) durante las fases de inyección de caos.
 
-![Prometheus - Gráfica de Error Z-Score](evidences/evidence_prometheus_graph_zscore.png)
+![Prometheus - Gráfica de Error Z-Score](screenshots/evidence_prometheus_graph_zscore.png)
 
 ---
 
@@ -99,28 +97,28 @@ Vista integral para el equipo de guardia (SRE/Ops) mostrando:
 3. **Timeline Comparativo de 30 Minutos:** Alertas estáticas rojas discontinuas vs alerta correlacionada verde sólida.
 4. **Bandas de Línea Base Dinámica y Latencia P99 vs SLO (200ms).**
 
-![Grafana - Dashboard de Operaciones (30 Minutos / Chaos / Avalancha)](evidences/evidence_grafana_ops_dashboard.png)
+![Grafana - Dashboard de Operaciones (30 Minutos / Chaos / Avalancha)](screenshots/evidence_grafana_ops_dashboard.png)
 
 ---
 
 ### 5.4 Grafana UI — Dashboard de SLIs y Throughput (`http://localhost:3000/d/otel-lab-sli-v1`)
 Muestra la salud del pipeline de telemetría OpenTelemetry Collector, consumo de CPU y tasa de spans aceptados vía OTLP.
 
-![Grafana - Dashboard de SLIs](evidences/evidence_grafana_sli_dashboard.png)
+![Grafana - Dashboard de SLIs](screenshots/evidence_grafana_sli_dashboard.png)
 
 ---
 
 ### 5.5 Jaeger UI — Búsqueda de Trazas Distribuidas (`http://localhost:16686/search`)
 Muestra el diagrama de dispersión de trazas en `data-service`, evidenciando los picos de duración (350-380ms) y los spans con error durante el caos.
 
-![Jaeger - Búsqueda de Trazas Distribuidas](evidences/evidence_jaeger_search.png)
+![Jaeger - Búsqueda de Trazas Distribuidas](screenshots/evidence_jaeger_search.png)
 
 ---
 
 ### 5.6 Jaeger UI — Detalle de Traza Real con Error 503 (`http://localhost:16686/trace/...`)
 Muestra la jerarquía de spans reales de la transacción HTTP: `POST /gcp/records`, `db.insert.records`, `asyncpg INSERT`, capturando los eventos de excepción y la latencia real.
 
-![Jaeger - Detalle de Traza Distribuida Real](evidences/evidence_jaeger_trace_detail.png)
+![Jaeger - Detalle de Traza Distribuida Real](screenshots/evidence_jaeger_trace_detail.png)
 
 ---
 
