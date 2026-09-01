@@ -1,4 +1,9 @@
+fullnameOverride: data-service
+
 replicaCount: 1
+
+chaosControl:
+  enabled: false
 
 image:
   repository: your-registry/data-service

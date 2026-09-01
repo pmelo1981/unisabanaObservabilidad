@@ -24,6 +24,9 @@ collector:
     GCP_PROJECT_ID: ""  # Rellenar con project ID
     GCP_REGION: "us-central1"
 
+  googleCloud:
+    enabled: true
+
 # ── Jaeger ─────────────────────────────────────────────────────────────────────
 jaeger:
   enabled: true
@@ -54,6 +57,45 @@ jaeger:
 # ── Prometheus ─────────────────────────────────────────────────────────────────
 prometheus:
   enabled: true
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: actividad-3-3-modulo-d
+          interval: 15s
+          rules:
+            - alert: ChaosD1ServiceBLatencyDetected
+              expr: >-
+                histogram_quantile(0.99,
+                sum by (le)
+                (rate(order_processing_duration_milliseconds_bucket[1m]))) > 200
+              for: 30s
+              labels:
+                severity: warning
+                service: service-b
+                experiment: d1
+              annotations:
+                summary: "D1: aumento de latencia hacia service-b"
+                description: "El p99 superó 200 ms; el baseline local medido fue 73,58 ms."
+                runbook_url: "docs/runbooks/d1-service-b-latency.md"
+            - alert: ChaosD2DataServiceErrorRateDetected
+              expr: >-
+                (sum(rate(istio_requests_total{destination_service_name="data-service",
+                destination_service_namespace="data-service",
+                reporter="destination",
+                response_code=~"5.."}[1m]))
+                / clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="data-service",
+                destination_service_namespace="data-service",
+                reporter="destination"}[1m])), 0.001)) > 0.05
+              for: 30s
+              labels:
+                severity: critical
+                service: data-service
+                experiment: d2
+              annotations:
+                summary: "D2: error rate alto en data-service"
+                description: "Más del 5 % del tráfico a data-service terminó en 5xx."
+                runbook_url: "docs/runbooks/d2-data-service-errors.md"
   server:
     retention: "7d"
     resources:
