@@ -1,7 +1,7 @@
 """
 Motor de Chaos Engineering a Nivel de Aplicacion — data-service
 ===============================================================
-Permite inyectar fallas reales (latencia asincrona real y excepciones HTTP 503 reales)
+Permite inyectar fallas reales (latencia asincrona real y excepciones HTTP 500 reales)
 sobre peticiones HTTP genuinas procesadas por FastAPI y PostgreSQL, garantizando
 que OpenTelemetry capture trazas, spans y excepciones 100% organicas.
 """
@@ -24,7 +24,7 @@ class ChaosExperiment:
     latency_ms: float = 0.0
     latency_rate: float = 0.0  # Probabilidad de inyectar latencia (0.0 a 1.0)
     error_rate: float = 0.0  # Probabilidad de inyectar error (0.0 a 1.0)
-    error_status_code: int = 503
+    error_status_code: int = 500
     error_message: str = "ChaosEngine: Database connection timeout / pool exhaustion"
     flapping_interval_sec: float = 0.0  # Para oscilaciones de latencia
 
@@ -47,7 +47,7 @@ class ChaosEngine:
         latency_ms: float = 0.0,
         latency_rate: float = 0.0,
         error_rate: float = 0.0,
-        error_status_code: int = 503,
+        error_status_code: int = 500,
         error_message: str = "ChaosEngine: Database connection timeout / pool exhaustion",
     ) -> Dict[str, Any]:
         """Configura y activa un experimento de caos."""
