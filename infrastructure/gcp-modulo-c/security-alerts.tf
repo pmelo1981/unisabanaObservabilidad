@@ -176,7 +176,22 @@ resource "google_monitoring_alert_policy" "unexpected_service_pair" {
       filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.flow_unexpected_pair.name}\" AND resource.type=\"gce_subnetwork\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
-      duration        = "60s"
+
+      # duration = 0s: dispara con el PRIMER punto por encima del umbral.
+      #
+      # Estaba en 60s y eso la hacia perder ataques cortos. Medido: una rafaga
+      # de ~20 s contra puertos cerrados produjo datos en la metrica a las
+      # 20:51:37 y 20:52:37 y volvio a cero; con duration=60s la condicion
+      # nunca llego a sostenerse el minuto completo y NO se abrio incidente,
+      # mientras que SEC-1, SEC-4 y SEC-7 —que usan 0s— si dispararon con
+      # senales equivalentes. Un escaneo de puertos dura segundos: exigirle
+      # persistencia de un minuto es pedirle al atacante que insista.
+      #
+      # 0s solo es seguro porque el filtro de la metrica es preciso: cero
+      # coincidencias en 3 h de trafico normal del cluster (ver
+      # network-security.tf). Con el filtro anterior, 0s habria sido una
+      # tormenta.
+      duration = "0s"
 
       # NO agrupar por dest_port. Cloud Monitoring abre UN INCIDENTE POR CADA
       # combinacion distinta de las etiquetas de group_by_fields, y cada
