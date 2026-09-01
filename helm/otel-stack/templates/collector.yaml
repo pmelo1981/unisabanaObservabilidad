@@ -39,8 +39,13 @@ data:
         endpoint: "0.0.0.0:8889"
         resource_to_telemetry_conversion:
           enabled: true
+      {{- if .Values.collector.googleCloud.enabled }}
       googlecloud:
         project: ${GCP_PROJECT_ID}
+      {{- else }}
+      debug:
+        verbosity: basic
+      {{- end }}
 
     service:
       telemetry:
@@ -54,11 +59,20 @@ data:
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]
-          exporters: [prometheus, googlecloud]
+          exporters:
+            - prometheus
+            {{- if .Values.collector.googleCloud.enabled }}
+            - googlecloud
+            {{- end }}
         logs:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]
-          exporters: [googlecloud]
+          exporters:
+            {{- if .Values.collector.googleCloud.enabled }}
+            - googlecloud
+            {{- else }}
+            - debug
+            {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

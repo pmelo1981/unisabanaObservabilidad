@@ -42,9 +42,9 @@ Para garantizar un experimento riguroso sin sesgos, ambas fases recibieron el mi
  ───────────────────────────────────────────────────   ───────────────────────────────────────────────────
   • Min 0:00 - 4:00: Tráfico Normal (Sin Caos)          • Min 15:00 - 19:00: Tráfico Normal (Sin Caos)
   • Min 4:00 - 7:00: Jitter Latencia Real (150ms)       • Min 19:00 - 22:00: Jitter Latencia Real (150ms)
-  • Min 7:00 - 10:00: Errores 503 Reales Aislados (10%) • Min 22:00 - 25:00: Errores 503 Reales Aislados (10%)
+  • Min 7:00 - 10:00: Errores 500 Reales Aislados (10%) • Min 22:00 - 25:00: Errores 500 Reales Aislados (10%)
   • Min 10:00 - 13:00: Incidente Severo Real            • Min 25:00 - 28:00: Incidente Severo Real
-     (50% Fallos HTTP 503 + Latencia Real 350ms)           (50% Fallos HTTP 503 + Latencia Real 350ms)
+     (50% Fallos HTTP 500 + Latencia Real 350ms)           (50% Fallos HTTP 500 + Latencia Real 350ms)
   • Min 13:00 - 15:00: Recuperación (Sin Caos)          • Min 28:00 - 30:00: Recuperación (Sin Caos)
 ```
 
@@ -57,8 +57,8 @@ Para garantizar un experimento riguroso sin sesgos, ambas fases recibieron el mi
 |---|---|:---:|:---:|---|
 | **1. Tráfico Normal (4 min)** | Latencia 15ms, 0% errores | ✅ Silente | ✅ Silente | Operación saludable |
 | **2. Micro-Jitter Latencia (150ms)** | Latencia 150ms (>50ms), 0% errores | 🚨 **DISPARADA (Ruido)** | ✅ **Silente (Filtrada)** | Ruido suprimido por tasa de error en línea base |
-| **3. Errores 503 Aislados (10%)** | 10% fallos 503, Latencia 15ms | 🚨 **DISPARADA (Ruido)** | ✅ **Silente (Filtrada)** | Ruido suprimido por latencia dentro de SLO |
-| **4. Incidente Severo Coordinado** | 50% fallos 503 + 360ms latencia | 🚨 **DISPARADA (Real)** | 🚨 **DISPARADA Y ENRIQUECIDA** | Incidente crítico detectado con `trace_id` |
+| **3. Errores 500 Aislados (10%)** | 10% fallos 500, Latencia 15ms | 🚨 **DISPARADA (Ruido)** | ✅ **Silente (Filtrada)** | Ruido suprimido por latencia dentro de SLO |
+| **4. Incidente Severo Coordinado** | 50% fallos 500 + 360ms latencia | 🚨 **DISPARADA (Real)** | 🚨 **DISPARADA Y ENRIQUECIDA** | Incidente crítico detectado con `trace_id` |
 | **5. Recuperación (2 min)** | Latencia 15ms, 0% errores | ✅ Silente | ✅ Silente | Vuelta a la normalidad |
 
 ### 4.2 Indicadores Clave de Rendimiento (KPIs de Operaciones)
@@ -115,7 +115,7 @@ Muestra el diagrama de dispersión de trazas en `data-service`, evidenciando los
 
 ---
 
-### 5.6 Jaeger UI — Detalle de Traza Real con Error 503 (`http://localhost:16686/trace/...`)
+### 5.6 Jaeger UI — Detalle de Traza Real con Error 500 (`http://localhost:16686/trace/...`)
 Muestra la jerarquía de spans reales de la transacción HTTP: `POST /gcp/records`, `db.insert.records`, `asyncpg INSERT`, capturando los eventos de excepción y la latencia real.
 
 ![Jaeger - Detalle de Traza Distribuida Real](screenshots/evidence_jaeger_trace_detail.png)
