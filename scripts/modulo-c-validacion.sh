@@ -54,6 +54,23 @@ TIMEOUT_ESPERA=420 # 7 min: margen holgado sobre el objetivo de MTTD de 2 min
 SVC_DATA="data-service-data-service.${NS}.svc.cluster.local"
 SVC_B="service-b.${NS}.svc.cluster.local"
 
+# ── Por que el escenario B apunta a IPs DE POD y no a nombres de Service ─────
+# Esto se corrigio el 2026-09-01 despues de ver fallar el escenario contra el
+# cluster real. La version anterior hacia 'nc' contra el nombre DNS del
+# Service, que resuelve a una ClusterIP. Una conexion a una ClusterIP en un
+# puerto sin backend SI genera un flow log, pero SIN 'dest_gke_details': no
+# hay ningun pod detras de esa IP:puerto que GKE pueda anotar. La metrica
+# security/flow_unexpected_pair exige dest_gke_details.pod.pod_namespace, asi
+# que el escenario no podia producir la senal que decia probar — daba un falso
+# NEGATIVO silencioso, que en una prueba de deteccion es peor que no probar.
+#
+# Contra la IP del pod el registro si trae dest_gke_details. Verificado.
+#
+# Ademas la conexion debe CRUZAR de nodo: sin visibilidad intranodo
+# (PARCHE-modulo-a.md seccion 4, desactivada) el trafico entre dos pods del
+# mismo nodo no aparece en los flow logs. Por eso se elige un pod destino que
+# no este en el mismo nodo que la sonda.
+
 azul()  { printf '\033[1;34m%s\033[0m\n' "$*"; }
 verde() { printf '\033[1;32m%s\033[0m\n' "$*"; }
 rojo()  { printf '\033[1;31m%s\033[0m\n' "$*"; }
@@ -71,6 +88,25 @@ fi
 # Sin flow logs el modulo se aplica sin errores pero todos los paneles de
 # trafico quedan vacios, y nada lo explica. Aqui eso se convierte en un error
 # explicito antes de gastar tiempo generando trafico.
+# ── Comprobacion de credenciales, ANTES de nada ──────────────────────────────
+# Aprendido a golpes el 2026-09-01: la sesion de Cloud Shell puede perder la
+# cuenta activa a mitad de trabajo. Cuando eso pasa, cada 'gcloud logging read'
+# de este script devuelve un error de autenticacion que el '2>/dev/null' de
+# esperar_log() se traga, y el script informa "NO aparecio en 420s" — es decir,
+# reporta un FALLO DE DETECCION cuando lo que hay es un fallo de credenciales.
+# En una prueba de seguridad esa confusion es inaceptable: se comprueba aqui.
+if ! gcloud auth print-access-token >/dev/null 2>&1; then
+  rojo "gcloud no tiene una cuenta activa; el script no puede leer los logs."
+  echo
+  gris "Sin esto, cada espera de este script fallaria por credenciales y se"
+  gris "reportaria como un fallo de deteccion. Arreglalo con:"
+  echo
+  echo "  gcloud config set account TU_CUENTA"
+  echo "  gcloud config set project ${PROJECT_ID}"
+  echo
+  exit 1
+fi
+
 azul "== 0. Comprobando VPC Flow Logs en $SUBRED =="
 
 FLOW_LOGS="$(gcloud compute networks subnets describe "$SUBRED" \
@@ -175,16 +211,42 @@ fi
 # -----------------------------------------------------------------------------
 azul "== 3. Escenario B: conexion E-W a un puerto no autorizado =="
 gris "Puertos 9999/6379/27017: ninguno esta en var.ew_allowed_ports."
-T0=$(date +%s)
 
-for puerto in 9999 6379 27017; do
-  ejec "nc -z -w2 ${SVC_DATA} $puerto" || true
-  ejec "nc -z -w2 ${SVC_B} $puerto" || true
-done
+# Nodo de la sonda, para elegir un destino que este en OTRO nodo.
+NODO_SONDA="$(kubectl get pod "$POD" -n "$NS" -o jsonpath='{.spec.nodeName}')"
 
-gris "Senal esperada: security/flow_unexpected_pair -> alerta SEC-2."
-esperar_log "SEC-2 flujo E-W inesperado" \
-  'log_id("compute.googleapis.com/vpc_flows") AND jsonPayload.connection.dest_port=9999' "$T0"
+# Primer pod de la aplicacion que no comparta nodo con la sonda.
+IP_DESTINO=""
+POD_DESTINO=""
+while read -r nombre ip nodo; do
+  [[ "$nombre" == "$POD" ]] && continue
+  [[ -z "$ip" || "$ip" == "<none>" ]] && continue
+  if [[ "$nodo" != "$NODO_SONDA" ]]; then
+    IP_DESTINO="$ip"; POD_DESTINO="$nombre"; break
+  fi
+done < <(kubectl get pods -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.podIP}{" "}{.spec.nodeName}{"\n"}{end}')
+
+if [[ -z "$IP_DESTINO" ]]; then
+  rojo "No hay ningun pod de '$NS' en un nodo distinto al de la sonda."
+  gris "Sin visibilidad intranodo, el trafico dentro de un mismo nodo no"
+  gris "aparece en los flow logs, asi que el escenario no puede validarse."
+  gris "Ver infrastructure/gcp-modulo-c/PARCHE-modulo-a.md seccion 4."
+else
+  gris "Destino: $POD_DESTINO ($IP_DESTINO), nodo distinto al de la sonda."
+  T0=$(date +%s)
+
+  for _ in 1 2 3 4 5 6 7 8; do
+    for puerto in 9999 6379 27017; do
+      ejec "nc -z -w2 ${IP_DESTINO} $puerto" || true
+    done
+  done
+
+  gris "Senal esperada: security/flow_unexpected_pair -> alerta SEC-2."
+  # El filtro NO restringe 'reporter': una conexion rechazada (puerto cerrado)
+  # se registra con reporter=DEST y no genera registro del lado SRC.
+  esperar_log "SEC-2 flujo E-W inesperado" \
+    'log_id("compute.googleapis.com/vpc_flows") AND jsonPayload.connection.dest_port=9999 AND jsonPayload.dest_gke_details.pod.pod_namespace="'"$NS"'"' "$T0"
+fi
 echo
 
 # -----------------------------------------------------------------------------

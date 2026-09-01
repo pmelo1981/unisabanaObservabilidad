@@ -371,6 +371,67 @@ un incidente, con la granularidad que sirve para triage —*quién habló con
 quién*—; los puertos concretos se leen en los logs enlazados desde el incidente,
 que es donde hay que mirarlos de todos modos.
 
+### Defecto 3 — el filtro era ciego al ataque que dice detectar
+
+Este apareció al **ejecutar la validación**, no revisando código, y es el más
+grave de los tres: los dos primeros producían ruido; este producía **silencio**.
+
+El filtro exigía `jsonPayload.reporter="SRC"`. Al inyectar el ataque real
+contra el clúster, el registro que llegó fue:
+
+```
+reporter   : DEST
+dest_port  : 9999
+dest_pod   : service-b-7646f985b9-4vrj4  (namespace services)
+src_pod    : modulo-c-probe
+```
+
+**`reporter: DEST`, y ningún registro del lado SRC.** Una conexión *rechazada*
+—puerto cerrado, RST— la reporta el extremo destino. Y el movimiento lateral
+consiste precisamente en tocar puertos cerrados: la métrica no habría visto
+ni uno.
+
+La restricción estaba puesta para no contar dos veces los flujos establecidos,
+que ambos extremos reportan. Es una preocupación irrelevante aquí: el umbral
+de SEC-2 es `> 0` —es un detector de presencia, no un medidor de volumen— y la
+agrupación por par de pods colapsa los duplicados. Se elimina.
+
+**Verificación del filtro final**, sobre 3 horas de tráfico real del clúster
+con el ataque ya inyectado: devuelve **exactamente una entrada**, y es el
+ataque. Cero ruido, señal capturada.
+
+### El escenario de validación tampoco servía
+
+Al perseguir el defecto 3 salió otro, en `scripts/modulo-c-validacion.sh`: el
+escenario B hacía `nc` contra el **nombre DNS del Service**, que resuelve a una
+ClusterIP.
+
+Una conexión a una ClusterIP en un puerto sin backend sí genera flow log, pero
+**sin `dest_gke_details`**: no hay ningún pod detrás de esa IP:puerto que GKE
+pueda anotar. Comprobado lado a lado en el mismo minuto:
+
+| Destino | ¿`dest_gke_details`? |
+|---|---|
+| ClusterIP `10.52.13.115:9999` | **No** |
+| Pod IP `10.48.3.6:9999` | **Sí** — `services / service-b-…-4vrj4` |
+
+Es decir, el escenario no podía producir la señal que decía probar: daba un
+**falso negativo silencioso**, que en una prueba de detección es peor que no
+probar. Corregido para apuntar a la IP del pod, y además a un pod en **otro
+nodo**: sin visibilidad intranodo (§4 del parche, desactivada) el tráfico
+dentro de un mismo nodo no aparece en los flow logs.
+
+### Un fallo silencioso más, en el propio script
+
+Durante la ejecución, la sesión de Cloud Shell **perdió la cuenta activa de
+gcloud**. Cada `gcloud logging read` del script empezó a devolver un error de
+autenticación que el `2>/dev/null` de `esperar_log()` se tragaba, y el script
+habría informado *"NO apareció en 420s"* — es decir, habría reportado un fallo
+de **detección** cuando lo que había era un fallo de **credenciales**.
+
+Se añadió una comprobación de credenciales al principio del script, antes de
+cualquier otra cosa, que aborta con un mensaje explícito.
+
 ### Nota operativa: Terraform es el dueño de `enabled`
 
 Desactivar la política a mano (`PATCH … {"enabled":false}`) es válido para cortar
