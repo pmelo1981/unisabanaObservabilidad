@@ -502,6 +502,14 @@ resource "google_monitoring_alert_policy" "anomalous_egress" {
 # Cloud Monitoring, con el prefijo declarado en otel-collector/config-gcp.yaml
 # (custom.googleapis.com/otel).
 #
+# OJO: ese prefijo esta en el archivo que el repo DOCUMENTA, no en el que el
+# cluster EJECUTA. helm/otel-stack/templates/collector.yaml lleva su propia
+# configuracion embebida y no incluye 'metric.prefix', asi que el exporter
+# googlecloud usaria su valor por defecto (workload.googleapis.com/).
+# La deriva esta documentada en docs/MODULO-C-HALLAZGOS-PARA-EL-EQUIPO.md #2,
+# junto con las dos formas de cerrarla. Este filtro debera alinearse con la
+# que el equipo elija.
+#
 # ------------------------------------------------------------------------------
 # BLOQUEADA POR UNA DEPENDENCIA EXTERNA AL MODULO C (verificado 2026-09-01)
 #

@@ -16,13 +16,24 @@
 | Requisito del enunciado | Cómo se cumple | Estado |
 |---|---|---|
 | Habilitar **VPC Flow Logs (GCP)** | Activados en `dev-gke-subnet`: agregación 30 s, muestreo 1.0, metadatos completos | ✅ Activo |
-| Habilitar **VPC Flow Logs (AWS)** | `infrastructure/aws/` — codificado y validado | ⚠️ No aplicado: se trabajó sobre GCP, no hay cuenta AWS |
+| Habilitar **VPC Flow Logs (AWS)** | `infrastructure/aws/` — codificado y validado | ⚠️ **No aplicado.** Decisión del equipo: se trabajó sobre GCP y no hay cuenta AWS |
 | **Alertas de tráfico anómalo entre servicios** | 6 alert policies (SEC‑1 a SEC‑5, SEC‑7) sobre 10 métricas basadas en logs | ✅ Aplicadas y **verificadas disparando** |
-| **Security Command Center *o* Security Hub básico** | SCC no activable (§4). Cobertura equivalente con GKE Security Posture + Artifact Analysis + Cloud Audit Logs | ✅ Requisito cubierto por la vía alterna |
-| **Dashboard "Golden Signals de Seguridad"** | Panel único con autenticación fallida, tráfico N‑S/E‑W y CVEs | ✅ Creado |
+| **Security Command Center *o* Security Hub básico** | Ninguno de los dos está activo. Cobertura por otra vía: GKE Security Posture + Artifact Analysis + Cloud Audit Logs | ⚠️ **Cubierto por sustitución**, no por SCC. Ver §4 |
+| **Dashboard "Golden Signals de Seguridad"** | Panel único: auth fallida ✅ · tráfico N‑S/E‑W ✅ · **CVEs ❌ (muestra error)** | ⚠️ **2 de 3 señales con datos.** Ver §4 |
 
-El enunciado pide GCP **o** AWS en los dos primeros puntos, así que trabajar
-solo sobre GCP los satisface.
+> **Léase con cuidado antes de la sustentación.** El enunciado usa **"y"** en
+> los flow logs (*"VPC Flow Logs (GCP) **y** VPC Flow Logs (AWS)"*) y **"o"**
+> solo en el de SCC (*"Security Command Center (GCP) **o** AWS Security Hub"*).
+> Es decir: los flow logs de AWS **sí** forman parte del enunciado literal, y no
+> están desplegados. Conviene declararlo de forma explícita en la entrega y en
+> el video, con la justificación (no hay cuenta de AWS; el módulo está escrito y
+> validado en `infrastructure/aws/`), en lugar de dejar que el evaluador lo
+> descubra.
+
+**Estado honesto: el punto C está cumplido en su parte de GCP y le faltan tres
+piezas**, ninguna de ellas resoluble desde el Módulo C: los flow logs de AWS,
+la activación de SCC, y la señal de CVEs del dashboard. Las tres, con evidencia
+y arreglo, están en `docs/MODULO-C-HALLAZGOS-PARA-EL-EQUIPO.md`.
 
 ---
 
@@ -151,6 +162,11 @@ incluida la elección del pod destino en otro nodo— y mide los tiempos:
 ---
 
 ## 4. Qué NO se hizo, y por qué
+
+> Los defectos ajenos al Módulo C que se encontraron por el camino están
+> recogidos, con evidencia y comandos para reproducirlos, en
+> **`docs/MODULO-C-HALLAZGOS-PARA-EL-EQUIPO.md`**. Ese es el documento para
+> pasarle al equipo.
 
 Dos cosas quedaron fuera. Ninguna es un olvido, y ninguna depende del Módulo C.
 
