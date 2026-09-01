@@ -441,10 +441,29 @@ resource "google_logging_metric" "flow_egress_internet_bytes" {
 #      10054. Se acota el destino al namespace de la aplicacion, que es donde
 #      el movimiento lateral importa para este modulo.
 #
-# Comprobacion antes de volver a aplicar: el filtro corregido devuelve CERO
-# entradas sobre 2 horas de trafico real del cluster, y el escenario B de
-# scripts/modulo-c-validacion.sh (probe -> data-service:9999) sigue cayendo
-# dentro de el.
+#   3) El filtro exigia reporter="SRC", y eso la dejaba CIEGA al escaneo que
+#      pretende detectar. Comprobado inyectando el ataque en el cluster: una
+#      conexion RECHAZADA (RST, puerto cerrado) se registra con
+#
+#        reporter: DEST
+#
+#      y NO genera registro del lado SRC. El movimiento lateral consiste
+#      justamente en tocar puertos cerrados: la metrica no habria visto
+#      ninguno. La restriccion estaba puesta para no contar dos veces los
+#      flujos establecidos, que ambos extremos reportan — una preocupacion
+#      irrelevante aqui, porque el umbral de SEC-2 es >0 (es un detector de
+#      presencia, no un medidor de volumen) y la agrupacion por par de pods
+#      colapsa los duplicados. Se elimina la restriccion.
+#
+# Comprobacion del filtro final sobre 3 HORAS de trafico real del cluster,
+# con el ataque ya inyectado: devuelve EXACTAMENTE UNA entrada, y es el
+# ataque (DEST, puerto 9999, service-b). Cero ruido, senal capturada.
+#
+# NOTA para reproducir el ataque: hay que apuntar a la IP DEL POD, no al
+# nombre DNS del Service. Un Service resuelve a una ClusterIP, y una conexion
+# a una ClusterIP en un puerto sin backend produce un flow log SIN
+# dest_gke_details (no hay pod detras que anotar), asi que no cae en esta
+# metrica por mucho que el puerto sea ilegitimo. Ver scripts/modulo-c-validacion.sh.
 # ------------------------------------------------------------------------------
 resource "google_logging_metric" "flow_unexpected_pair" {
   name        = "security/flow_unexpected_pair"
@@ -452,7 +471,6 @@ resource "google_logging_metric" "flow_unexpected_pair" {
 
   filter = <<-EOT
     ${local.flow_log_base}
-    jsonPayload.reporter="SRC"
     jsonPayload.src_gke_details.pod.pod_namespace:*
     jsonPayload.dest_gke_details.pod.pod_namespace="${var.app_namespace}"
     jsonPayload.connection.dest_port<32768
