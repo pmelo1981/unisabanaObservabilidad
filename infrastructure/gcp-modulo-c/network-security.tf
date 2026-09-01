@@ -417,6 +417,35 @@ resource "google_logging_metric" "flow_egress_internet_bytes" {
 # Esta metrica NO sustituye a la deteccion estadistica (ver security-alerts.tf,
 # politica de desviacion sobre baseline): la complementa. La deteccion
 # deterministica tiene precision ~1.0 y recall bajo; la estadistica, al reves.
+#
+# ------------------------------------------------------------------------------
+# CORRECCION DEL 2026-09-01 — la version inicial de esta metrica genero una
+# tormenta de falsos positivos (~1 correo por minuto). Dos causas reales,
+# ambas verificadas leyendo los flow logs del proyecto, no supuestas:
+#
+#   1) VPC Flow Logs registra las DOS direcciones de cada conexion como
+#      entradas independientes, ambas con reporter="SRC". En la direccion de
+#      RESPUESTA el destino es el puerto EFIMERO del cliente, que nunca puede
+#      estar en una lista de puertos de servicio. Ejemplo real observado:
+#
+#        kube-state-metrics:8080 -> prometheus-server:37936   <- la respuesta
+#
+#      Es decir: toda conversacion legitima cuyo puerto de servidor no
+#      estuviera en la lista disparaba la alerta por su propia respuesta.
+#      Filtro anadido: dest_port<32768 (Linux usa 32768-60999 como rango
+#      efimero), que se queda solo con la direccion cliente -> servidor.
+#
+#   2) El alcance era todo el cluster. Los namespaces de plataforma hablan
+#      legitimamente por puertos que no estan —ni deben estar— en la matriz
+#      de la aplicacion: kubelet 10250, pushgateway 9091, node-local-dns
+#      10054. Se acota el destino al namespace de la aplicacion, que es donde
+#      el movimiento lateral importa para este modulo.
+#
+# Comprobacion antes de volver a aplicar: el filtro corregido devuelve CERO
+# entradas sobre 2 horas de trafico real del cluster, y el escenario B de
+# scripts/modulo-c-validacion.sh (probe -> data-service:9999) sigue cayendo
+# dentro de el.
+# ------------------------------------------------------------------------------
 resource "google_logging_metric" "flow_unexpected_pair" {
   name        = "security/flow_unexpected_pair"
   description = "Modulo C — flujos este-oeste hacia puertos fuera de la matriz de comunicacion autorizada"
@@ -425,7 +454,8 @@ resource "google_logging_metric" "flow_unexpected_pair" {
     ${local.flow_log_base}
     jsonPayload.reporter="SRC"
     jsonPayload.src_gke_details.pod.pod_namespace:*
-    jsonPayload.dest_gke_details.pod.pod_namespace:*
+    jsonPayload.dest_gke_details.pod.pod_namespace="${var.app_namespace}"
+    jsonPayload.connection.dest_port<32768
     NOT jsonPayload.connection.dest_port=(${local.ew_allowed_ports_expr})
   EOT
 

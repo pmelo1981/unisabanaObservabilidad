@@ -35,7 +35,10 @@ output "security_alert_policies" {
     "SEC-3_volumen_ew_anomalo" = google_monitoring_alert_policy.east_west_volume_anomaly.name
     "SEC-4_conexiones_negadas" = google_monitoring_alert_policy.denied_connections.name
     "SEC-5_egress_anomalo"     = google_monitoring_alert_policy.anomalous_egress.name
-    "SEC-6_cve_critico"        = google_monitoring_alert_policy.critical_cve.name
+    # Vacia mientras var.enable_cve_alert sea false: el tramo
+    # Collector -> Cloud Monitoring del pipeline esta roto (ver
+    # security-alerts.tf, SEC-6, y PARCHE-modulo-a.md seccion 5).
+    "SEC-6_cve_critico" = try(google_monitoring_alert_policy.critical_cve[0].name, "NO CREADA — pipeline OTel->Cloud Monitoring roto, ver PARCHE-modulo-a.md §5")
     "SEC-7_postura_gke"        = google_monitoring_alert_policy.gke_posture.name
   }
 }

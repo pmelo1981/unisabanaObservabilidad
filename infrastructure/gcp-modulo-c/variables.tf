@@ -99,11 +99,33 @@ variable "security_alert_email" {
   default     = ""
 }
 
+variable "app_namespace" {
+  description = <<-EOT
+    Namespace donde viven los workloads de la aplicacion (service-a, service-b,
+    data-service). Verificado en el cluster: los tres estan en 'services'; NO
+    hay un namespace 'data-service'.
+
+    Acota el alcance de la metrica security/flow_unexpected_pair al DESTINO de
+    los flujos. Sin esta restriccion la metrica tambien contabiliza el trafico
+    interno de la plataforma —kubelet 10250, pushgateway 9091, node-local-dns
+    10054— que es legitimo y no pertenece a la matriz de la aplicacion. Ese
+    fue uno de los dos origenes de la tormenta de falsos positivos del
+    2026-09-01 (el detalle completo esta en network-security.tf).
+  EOT
+  type        = string
+  default     = "services"
+}
+
 variable "ew_allowed_ports" {
   description = <<-EOT
     Puertos legitimos del trafico este-oeste del mesh. Todo flujo pod->pod
     hacia un puerto FUERA de esta lista se contabiliza como 'par inesperado'
     y dispara la alerta deterministica de trafico anomalo (SEC-2).
+
+    Solo se evaluan los puertos de SERVIDOR (dest_port<32768). VPC Flow Logs
+    registra tambien la direccion de respuesta de cada conexion, cuyo destino
+    es el puerto efimero del cliente; incluirla hacia que toda conversacion
+    legitima se denunciara a si misma. Ver network-security.tf.
 
     ⚠️  Esta lista se verifico contra los charts reales de helm/, NO contra
     supuestos. Los puertos de los servicios NO son todos 8080:
@@ -213,3 +235,29 @@ variable "enable_container_scanning" {
   default     = true
 }
 
+
+variable "enable_cve_alert" {
+  description = <<-EOT
+    Crea la alerta SEC-6 (CVE critico activo).
+
+    Por defecto FALSE, y no por comodidad: el tramo Collector -> Cloud
+    Monitoring del pipeline de metricas esta roto en el proyecto, asi que la
+    metrica custom.googleapis.com/otel/security.cves.active no existe y crear
+    la politica falla con un 404 en cada 'terraform apply'.
+
+    El diagnostico completo esta en security-alerts.tf (bloque SEC-6) y el
+    arreglo, que pertenece al Modulo A, en PARCHE-modulo-a.md seccion 5.
+    Resumen: el Deployment 'otel-collector' usa la KSA 'default' sin anotacion
+    de Workload Identity, asi que corre sin identidad de GCP.
+
+    Poner a true DESPUES de aplicar ese parche y de comprobar que la metrica
+    aparece:
+
+      gcloud logging read ... # no: se comprueba en Monitoring, no en Logging
+      curl -s -G -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+        --data-urlencode 'filter=metric.type=has_substring("security.cves")' \
+        "https://monitoring.googleapis.com/v3/projects/$PROJECT/metricDescriptors"
+  EOT
+  type        = bool
+  default     = false
+}
