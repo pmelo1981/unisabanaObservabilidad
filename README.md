@@ -1,5 +1,8 @@
 # Laboratorio: Pipeline de Observabilidad End-to-End con OpenTelemetry
 
+> **Actividad 3.3 — Módulo D:** los experimentos de Chaos Engineering deben ejecutarse únicamente en un sandbox autorizado y sus resultados deben acompañarse de evidencia reproducible.
+> El procedimiento local está en [`chaos/README.md`](chaos/README.md) y la adaptación pendiente de validar en GCP/GKE está en [`chaos/gcp/README.md`](chaos/gcp/README.md).
+
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.27.0-blueviolet?logo=opentelemetry)](https://opentelemetry.io/)
 [![Google Cloud](https://img.shields.io/badge/GCP-GKE%20%2B%20Cloud%20SQL-4285F4?logo=googlecloud)](https://cloud.google.com/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.35.6-326CE5?logo=kubernetes)](https://kubernetes.io/)
