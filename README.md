@@ -1,6 +1,6 @@
 # Observabilidad End-to-End en GKE con OpenTelemetry
 
-Laboratorio de observabilidad para tres servicios FastAPI desplegados en GKE. Centraliza trazas, métricas y logs con OpenTelemetry, Jaeger, Prometheus, Grafana y Cloud Logging; `data-service` usa Cloud SQL PostgreSQL por red privada para los experimentos de datos, caos y detección de anomalías.
+Laboratorio de observabilidad para tres servicios FastAPI desplegados en GKE. Centraliza trazas, métricas y logs con OpenTelemetry, Jaeger, Prometheus, Grafana y Cloud Logging; `data-service` usa Cloud SQL PostgreSQL por red privada para los experimentos de datos, caos y detección de anomalías. El alcance de este repositorio es GCP-only; no contiene ni declara componentes AWS.
 
 ## Estado verificado
 
@@ -75,7 +75,7 @@ Las capturas son documentación técnica versionada y deben permanecer en el rep
 | Trazas | Métricas y alertas |
 |---|---|
 | ![Búsqueda de trazas en Jaeger](docs/screenshots/evidence_jaeger_search.png) | ![Panel operativo de Grafana](docs/screenshots/evidence_grafana_ops_dashboard.png) |
-| ![Detalle de una traza](docs/screenshots/evidence_jaeger_trace_detail.png) | ![Reglas de Prometheus](docs/screenshots/evidence_prometheus_rules.png) |
+| ![Detalle de una traza](docs/screenshots/jaeger-trace-detail.png) | ![Reglas de Prometheus](docs/screenshots/evidence_prometheus_rules.png) |
 | ![Interfaz de Jaeger](docs/screenshots/jaeger-ui.png) | ![Dashboard SLI](docs/screenshots/evidence_grafana_sli_dashboard.png) |
 
 | Fuentes de seguridad en SCC | Hallazgos activos filtrados |
