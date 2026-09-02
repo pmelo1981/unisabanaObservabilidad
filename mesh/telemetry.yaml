@@ -1,12 +1,11 @@
 # Configuracion de observabilidad L7 del mesh (Istio Telemetry API):
-#   - Trazas: 100% sampling en los proxies Envoy, generando spans L7
-#     (istio-proxy) que envuelven a los spans de aplicacion emitidos por
-#     el SDK de OTel, mostrando en Jaeger el salto de red completo
-#     (cliente -> sidecar -> sidecar -> servidor).
+#   - Trazas: 100% sampling en los proxies Envoy mediante el proveedor
+#     Stackdriver gestionado por Cloud Service Mesh, con visibilidad L7 en
+#     Cloud Trace para cada salto entre workloads.
 #   - Access logs: formato estructurado JSON en stdout de cada sidecar,
 #     con metricas RED (request/error/duration) a nivel de proxy, no solo
 #     de aplicacion.
-apiVersion: telemetry.istio.io/v1
+apiVersion: telemetry.istio.io/v1alpha1
 kind: Telemetry
 metadata:
   name: mesh-default
@@ -14,7 +13,7 @@ metadata:
 spec:
   tracing:
     - providers:
-        - name: otel-collector
+      - name: stackdriver
       randomSamplingPercentage: 100.0
   accessLogging:
     - providers:

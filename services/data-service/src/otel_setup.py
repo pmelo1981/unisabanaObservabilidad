@@ -5,8 +5,8 @@ OpenTelemetry SDK setup para data-service — tres pilares de observabilidad:
   - Logs:    OTLPLogExporter    -> OTel Collector -> Cloud Logging
              + JSON estructurado en stdout con trace_id/span_id inyectados
 
-Mismo patron que services/service-a/otel_setup.py, adaptado para un servicio
-que habla con dos backends de base de datos (GCP Cloud SQL y AWS RDS/simulado).
+Mismo patron que services/service-a/otel_setup.py, adaptado para el servicio
+de datos conectado a GCP Cloud SQL.
 """
 import json
 import logging

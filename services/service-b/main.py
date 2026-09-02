@@ -10,6 +10,7 @@ Pilares observables:
   - Metricas: item fetch rate, cache simulation, enrichment duration
   - Logs: JSON estructurado con trace_id inyectado automaticamente
 """
+import asyncio
 import logging
 import os
 import random
@@ -83,6 +84,8 @@ db_errors = meter.create_counter(
     unit="1",
 )
 
+service_b_chaos = {"enabled": False, "latency_ms": 0.0, "injected_requests": 0}
+
 
 # ── Modelos Pydantic ──────────────────────────────────────────────────────
 class ItemResponse(BaseModel):
@@ -108,12 +111,34 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class LatencyExperimentRequest(BaseModel):
+    latency_ms: float = 200.0
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse, tags=["Infraestructura"])
 async def health():
     """Health check — usado por load balancers y readiness probes."""
     return HealthResponse(status="ok", service="service-b", version="1.0.0")
+
+
+@app.post("/chaos/latency", tags=["Chaos Engineering"])
+async def enable_latency_experiment(request: LatencyExperimentRequest):
+    """Activa una inyeccion de latencia real para las solicitudes de catalogo."""
+    service_b_chaos.update(enabled=True, latency_ms=request.latency_ms, injected_requests=0)
+    return service_b_chaos
+
+
+@app.get("/chaos/status", tags=["Chaos Engineering"])
+async def get_latency_experiment_status():
+    return service_b_chaos
+
+
+@app.post("/chaos/reset", tags=["Chaos Engineering"])
+async def reset_latency_experiment():
+    service_b_chaos.update(enabled=False, latency_ms=0.0, injected_requests=0)
+    return service_b_chaos
 
 
 @app.get(
@@ -174,8 +199,13 @@ async def get_item(item_id: int):
         span.set_attribute("enrichment.source", "inventory-service-mock")
         span.set_attribute("item.id", item_id)
 
+        if service_b_chaos["enabled"]:
+            await asyncio.sleep(service_b_chaos["latency_ms"] / 1000.0)
+            service_b_chaos["injected_requests"] += 1
+            span.set_attribute("chaos.latency_ms", service_b_chaos["latency_ms"])
+
         # Simula latencia de servicio externo (5–25 ms)
-        time.sleep(random.uniform(0.005, 0.025))
+        await asyncio.sleep(random.uniform(0.005, 0.025))
 
         # Simula disponibilidad y stock
         availability_options = ["in_stock", "low_stock", "out_of_stock"]

@@ -412,7 +412,7 @@
     },
     {
       "id": 10,
-      "title": "Throughput Real de Base de Datos por Proveedor (Cloud SQL vs AWS RDS)",
+      "title": "Throughput Real de Base de Datos (Cloud SQL)",
       "description": "Tasa de inserciones y consultas reales procesadas por segundo",
       "type": "timeseries",
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },

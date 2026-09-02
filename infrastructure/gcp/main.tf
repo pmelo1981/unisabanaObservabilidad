@@ -52,6 +52,7 @@ resource "google_project_service" "required_apis" {
     "compute.googleapis.com",            # VPC, IPs
     "logging.googleapis.com",            # Cloud Logging
     "monitoring.googleapis.com",         # Cloud Monitoring
+    "securitycenter.googleapis.com",     # Security Command Center
     "cloudresourcemanager.googleapis.com",
     "servicenetworking.googleapis.com",  # VPC peering para Cloud SQL
     "secretmanager.googleapis.com",      # Secret Manager

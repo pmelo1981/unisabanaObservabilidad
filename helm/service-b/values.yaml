@@ -2,9 +2,9 @@
 replicaCount: 2
 
 image:
-  repository: ""
+  repository: "us-central1-docker.pkg.dev/project-546ee9f1-20e7-4368-919/otel-lab/service-b"
   pullPolicy: Always
-  tag: "latest"
+  tag: "chaos-instance-v2"
 
 service:
   type: ClusterIP

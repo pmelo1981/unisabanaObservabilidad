@@ -9,7 +9,7 @@
 # pero el salto real hacia el Collector -sin sidecar que termine TLS- nunca
 # se completa). PERMISSIVE aqui le permite al Collector aceptar tanto
 # conexiones en texto plano como mTLS, sin exponer el resto del mesh.
-apiVersion: security.istio.io/v1
+apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
   name: allow-plaintext-observability

@@ -1,229 +1,155 @@
-# 🌐 Pipeline de Observabilidad End-to-End con OpenTelemetry en Google Cloud Platform (GCP)
+# Observabilidad End-to-End en GKE con OpenTelemetry
 
-[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.27.0-blueviolet?logo=opentelemetry)](https://opentelemetry.io/)
-[![Google Cloud](https://img.shields.io/badge/GCP-GKE%20%2B%20Cloud%20SQL-4285F4?logo=googlecloud)](https://cloud.google.com/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.35.6-326CE5?logo=kubernetes)](https://kubernetes.io/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Jaeger](https://img.shields.io/badge/Jaeger-v1.60-brightgreen?logo=jaeger)](https://jaegertracing.io/)
-[![Prometheus](https://img.shields.io/badge/Prometheus-v2.54-E6522C?logo=prometheus)](https://prometheus.io/)
-[![Grafana](https://img.shields.io/badge/Grafana-v11.2-F46800?logo=grafana)](https://grafana.com/)
-[![Istio](https://img.shields.io/badge/Istio-1.23-466BB0?logo=istio)](https://istio.io/)
-[![Guía Despliegue & IA](https://img.shields.io/badge/Gu%C3%ADa%20Despliegue-IA%20Prompts-success?logo=openai)](docs/GUIA_COLABORACION_IA.md)
-[![Autoevaluación Blueprint](https://img.shields.io/badge/Blueprint%20Madurez-Nivel%204.16-blue?logo=googlecloud)](docs/AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md)
-[![Roadmap 3 Meses](https://img.shields.io/badge/Roadmap-3%20Meses%20Nivel%204.8-blueviolet?logo=target)](docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md)
-[![Informe Técnico](https://img.shields.io/badge/Informe%20T%C3%A9cnico-PDF-red?logo=adobeacrobatreader)](docs/INFORME_TECNICO.pdf)
+Laboratorio de observabilidad para tres servicios FastAPI desplegados en GKE. Centraliza trazas, métricas y logs con OpenTelemetry, Jaeger, Prometheus, Grafana y Cloud Logging; `data-service` usa Cloud SQL PostgreSQL por red privada para los experimentos de datos, caos y detección de anomalías.
 
----
+## Estado verificado
 
-## 📌 Resumen Ejecutivo del Proyecto
+| Recurso | Estado |
+|---|---|
+| Proyecto GCP | `project-546ee9f1-20e7-4368-919` |
+| Región | `us-central1` |
+| GKE | `dev-otel-cluster`, `v1.35.7-gke.1027000` |
+| Cloud SQL | PostgreSQL 16, `dev-otel-postgres`, IP privada `10.40.0.2` |
+| Observabilidad | OTel Collector, Jaeger, Prometheus y Grafana desplegados |
+| Seguridad | VPC Flow Logs, métricas de autenticación, reglas y dashboard desplegados |
+| Cloud Service Mesh | Gestionado, `ACTIVE` con Traffic Director; sidecars Envoy, mTLS y telemetría L7 validados |
+| Security Command Center | SCC Standard activo; consulta v2 validada sin hallazgos activos |
 
-Este repositorio contiene la arquitectura, implementación y documentación técnica del **Pipeline de Observabilidad End-to-End basado en OpenTelemetry (OTel)**, desplegado en **Google Cloud Platform (GCP)** sobre un clúster regional de **Google Kubernetes Engine (GKE)** y **Cloud SQL PostgreSQL 16**.
+## Arquitectura actual
 
-La solución integra de forma unificada los **tres pilares de la observabilidad** (Trazas, Métricas y Logs estructurados) junto con observabilidad de red L7 mediante **Istio Service Mesh**, detección inteligente de anomalías (**AIOps**), observabilidad de red y seguridad (**VPC Flow Logs & Security Golden Signals**) y resiliencia comprobada mediante **Chaos Engineering**.
+```mermaid
+flowchart LR
+    Client[Cliente o k6] -->|HTTP| ServiceA[service-a<br/>LoadBalancer :8000]
+    ServiceA -->|HTTP + W3C TraceContext + mTLS| ServiceB[service-b<br/>ClusterIP :8001]
+    Runner[Pruebas de caos o cliente interno] -->|HTTP| DataService[data-service<br/>ClusterIP :8080]
+    DataService -->|IP privada :5432| CloudSQL[Cloud SQL PostgreSQL 16<br/>dev-otel-postgres]
 
----
+    subgraph GKE[dev-otel-cluster / us-central1]
+      ServiceA
+      ServiceB
+      DataService
+      Collector[otel-collector<br/>OTLP :4317/:4318]
+      Prometheus[Prometheus]
+      Grafana[Grafana]
+      Jaeger[Jaeger]
+    end
 
-## 🌐 1. Estado y Puntos de Acceso en Producción (GCP Activo)
-
-* **Cuenta Propietaria GCP:** `pabloandresmelo1981@gmail.com`
-* **GCP Project ID:** `project-546ee9f1-20e7-4368-919` (`us-central1`)
-* **Clúster GKE:** `dev-otel-cluster` (Regional, 6 nodos `e2-standard-2`, todos los pods en estado `1/1 Running`).
-* **Base de Datos:** Cloud SQL PostgreSQL 16 `dev-otel-postgres` (`10.40.0.2:5432/labdb`).
-
-### 🔗 Matriz de Endpoints Públicos y Servicios
-
-| Componente | Tipo | URL Pública / Endpoint | Puerto | Función |
-|---|:---:|---|:---:|---|
-| **Service A (Gateway)** | `LoadBalancer` | **[http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs)** | `8000/TCP` | Swagger UI interactivo / API de Órdenes |
-| **Grafana Server** | `LoadBalancer` | **[http://35.253.127.244](http://35.253.127.244)** *(admin / admin)* | `80/TCP` | Dashboards RED y SLIs en vivo |
-| **Jaeger UI** | `LoadBalancer` | **[http://34.134.141.14:16686](http://34.134.141.14:16686)** | `16686/TCP` | Visualización de trazas y cascada distribuida |
-| **Service B (Catálogo)** | `ClusterIP` | `10.52.15.158` (Red Privada) | `8001/TCP` | Catálogo de inventario |
-| **Data Service** | `ClusterIP` | `10.52.13.115` (Red Privada) | `8080/TCP` | Acceso a PostgreSQL (Cloud SQL) |
-| **OTel Collector** | `ClusterIP` | `10.52.12.109` (Red Privada) | `4317/4318` | Gateway centralizado de telemetría OTLP |
-| **Prometheus Server** | `ClusterIP` | `10.52.1.97` (Red Privada) | `80/TCP` | Recolección de métricas de pods y nodos |
-
----
-
-## 🏛️ 2. Arquitectura General y Topología
-
-```text
-                               ┌─────────────────────────────────────────┐
-                               │               Cliente / k6              │
-                               └────────────────────┬────────────────────┘
-                                                    │ HTTP Requests
-                                                    ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Google Kubernetes Engine (GKE Cluster: dev-otel-cluster | Project: project-546ee9f1-20e7-4368-919)                 │
-│                                                                                                                  │
-│  ┌─ Namespace: services (con Istio Sidecar Envoy & mTLS STRICT) ──────────────────────────────────────────────┐  │
-│  │                                                                                                            │  │
-│  │   ┌───────────────────────────┐    HTTP + W3C TraceContext    ┌───────────────────────────┐                │  │
-│  │   │  service-a (FastAPI)      │ ────────────────────────────► │  service-b (FastAPI)      │                │  │
-│  │   │  IP: 35.193.118.242:8000  │                               │  ClusterIP: 10.52.15.158  │                │  │
-│  │   └─────────────┬─────────────┘                               └─────────────┬─────────────┘                │  │
-│  │                 │                                                           │                              │  │
-│  │                 │               ┌───────────────────────────┐               │                              │  │
-│  │                 └─────────────► │  data-service (FastAPI)   │ ◄─────────────┘                              │  │
-│  │                                 │  ClusterIP: 10.52.13.115  │                                              │  │
-│  │                                 └─────────────┬─────────────┘                                              │  │
-│  └───────────────────────────────────────────────┼────────────────────────────────────────────────────────────┘  │
-│                                                  │                                                               │
-│                                                  │ OTLP gRPC (:4317)                                             │
-│                                                  ▼                                                               │
-│  ┌─ Namespace: observability ─────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                                  ┌───────────────────────────────────┐                                     │  │
-│  │                                  │  OpenTelemetry Collector Gateway  │                                     │  │
-│  │                                  │  ClusterIP: 10.52.12.109          │                                     │  │
-│  │                                  └─────────────────┬─────────────────┘                                     │  │
-│  │                                                    │                                                       │  │
-│  │                     ┌──────────────────────────────┼──────────────────────────────┐                        │  │
-│  │                     ▼ (Trazas)                     ▼ (Métricas)                   ▼ (Logs)                 │  │
-│  │           ┌───────────────────┐          ┌───────────────────┐          ┌───────────────────┐              │  │
-│  │           │  Jaeger Engine    │          │  Prometheus       │          │  Cloud Logging    │              │  │
-│  │           │  34.134.141.14    │          │  Server           │          │  (JSON estruct.)  │              │  │
-│  │           └─────────┬─────────┘          └─────────┬─────────┘          └───────────────────┘              │  │
-│  │                     │                              │                                                       │  │
-│  │                     │                              ▼                                                       │  │
-│  │                     │                    ┌───────────────────┐                                             │  │
-│  │                     │                    │  Grafana Server   │                                             │  │
-│  │                     │                    │  35.253.127.244   │                                             │  │
-│  │                     │                    └─────────┬─────────┘                                             │  │
-│  │                     └──────────────────────────────┘                                                       │  │
-│  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-│                                                  │                                                               │
-│  ┌─ Managed Cloud SQL (GCP) ─────────────────────┼────────────────────────────────────────────────────────────┐  │
-│  │   PostgreSQL 16: dev-otel-postgres | Private IP: 10.40.0.2:5432/labdb | OTel DB Semantic Conventions       │  │
-│  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ServiceA -->|OTLP| Collector
+    ServiceB -->|OTLP| Collector
+    DataService -->|OTLP| Collector
+    Collector -->|trazas| Jaeger
+    Collector -->|métricas| Prometheus
+    Prometheus --> Grafana
 ```
 
----
+`service-a` consume `service-b` y propaga `traceparent`. `data-service` es un servicio independiente: recibe tráfico de las pruebas de datos y experimentos, y es el único componente de esta topología que accede a Cloud SQL. Los nombres DNS, no los ClusterIP, son la referencia estable.
 
-## 📦 3. Desglose de Cumplimiento de los 4 Módulos
+| Namespace | Servicio | Endpoint | Función |
+|---|---|---|---|
+| `services` | `service-a` | [http://35.193.118.242:8000/docs](http://35.193.118.242:8000/docs) | API de órdenes |
+| `services` | `service-b` | `service-b.services.svc.cluster.local:8001` | Catálogo |
+| `services` | `data-service-data-service` | `data-service-data-service.services.svc.cluster.local:8080` | Datos, AIOps y seguridad |
+| `observability` | `otel-collector` | `otel-collector.observability.svc.cluster.local:4317` | Receptor OTLP gRPC |
+| `observability` | Grafana | [http://35.253.127.244](http://35.253.127.244) | Dashboards y alertas |
+| `observability` | Jaeger | [http://34.134.141.14:16686](http://34.134.141.14:16686) | Búsqueda de trazas |
 
-### 🅰️ Módulo A — Arquitectura Observable Completa
-* **Microservicios:** `service-a` (orquestación), `service-b` (catálogo) y `data-service` (persistencia) en FastAPI.
-* **3 Pilares OTel:**
-  - **Trazas:** `TracerProvider` con `BatchSpanProcessor` exportando por OTLP gRPC hacia Jaeger.
-  - **Métricas:** `MeterProvider` exportando a Prometheus con métricas RED de latencia, tasa de peticiones y errores.
-  - **Logs:** JSON estructurado inyectando `trace_id` y `span_id` bajo el estándar **W3C TraceContext** (`traceparent`).
-* **OTel DB Semantic Conventions:** Auto-instrumentación con `AsyncPGInstrumentor` y enriquecimiento manual con `db_span()` (`db.system=postgresql`, `db.operation`, `db.sql.table`, `server.address`, `db.statement`).
-* **Service Mesh (Istio):** Desplegado con sidecars Envoy (`istio-proxy`), cifrado **mTLS STRICT** en namespace `services` y telemetría de red L7.
+## Instrumentación y señales
 
----
+Cada servicio configura el SDK OTel antes de crear la aplicación FastAPI. `FastAPIInstrumentor` genera spans HTTP; `HTTPXClientInstrumentor` propaga el contexto entre `service-a` y `service-b`; los instrumentadores SQLAlchemy/asyncpg emiten telemetría de las consultas. Los spans de negocio complementan la instrumentación automática.
 
-### 🅱️ Módulo B — AIOps: Detección Automática de Anomalías
-* **Motor de Anomalías (`services/data-service/src/anomaly_detector.py`):**
-  - Mantiene una ventana deslizante de 60 segundos sobre tráfico real, calculando en tiempo real la media ($\mu$) y desviación estándar ($\sigma$).
-* **Regla de Correlación Multi-Señal:**
-  $$\text{Alerta Activa} \iff (\text{error\_rate} > \mu_{\text{error}} + 2\sigma) \ \land \ (\text{latency\_p99} > \text{SLO\_threshold})$$
-* **Alertas Enriquecidas:** Cada incidente emite un objeto `EnrichedAlert` que inyecta automáticamente el `trace_id` del request fallido, ruta afectada y URL directa hacia Jaeger (`jaeger_url: http://34.134.141.14:16686/trace/{trace_id}`).
-* **Supresión de Ruido Comprobada:** Reduce el 100% de falsos positivos frente a sistemas con umbrales estáticos ante fluctuaciones transitorias.
+| Pilar | Implementación |
+|---|---|
+| Trazas | OTLP gRPC al Collector y exportación a Jaeger |
+| Métricas | Métricas OTel y de infraestructura expuestas a Prometheus; visualización en Grafana |
+| Logs | JSON estructurado con `trace_id` y `span_id`, exportado a Cloud Logging |
+| Datos | `data-service` usa `CLOUD_SQL_DSN`; endpoints `GET/POST /gcp/records` y `GET /health` |
+| Caos y AIOps | Latencia/errores controlados y detector correlacionado de tasa de error, p99 y SLO |
+| Seguridad | Métricas de autenticación y red, VPC Flow Logs, reglas y dashboard como código |
 
----
+Los artefactos que definen estos componentes están en [services](services), [helm](helm), [otel-collector](otel-collector), [grafana](grafana) e [infrastructure/gcp](infrastructure/gcp).
 
-### 🛡️ Módulo C — Network and Security Observability
-* **VPC Flow Logs:** Habilitados en la subred GKE con métricas basadas en logs en Cloud Logging para monitoreo de flujos este-oeste (E-W) y norte-sur (N-S) ([`infrastructure/gcp-modulo-c/network-security.tf`](infrastructure/gcp-modulo-c/network-security.tf)).
-* **Security Command Center (GCP):** Monitoreo de configuraciones vulnerables y permisos IAM ([`infrastructure/gcp-modulo-c/security-command-center.tf`](infrastructure/gcp-modulo-c/security-command-center.tf)).
-* **Dashboard de Golden Signals de Seguridad:** Paneles que vigilan autenticaciones fallidas, conexiones denegadas por firewall y métricas de CVEs provistas por [`services/cve-exporter/`](services/cve-exporter/).
+## Evidencia visual
 
----
+Las capturas son documentación técnica versionada y deben permanecer en el repositorio.
 
-### 🌪️ Módulo D — Chaos Engineering Controlado en Sandbox
-* **Aislamiento Estricto:** Ejecutado exclusivamente en sandbox dedicado ([`chaos/`](chaos/)) con flag de protección `CHAOS_CONTROL_ENABLED` y guardias de contexto para no afectar producción.
-* **Experimentos Ejecutados:**
-  1. **D1:** Inyección de 200ms de latencia en `service-b` mediante Istio VirtualService (`fault.delay`).
-  2. **D2:** Inyección de 10% de errores HTTP 500 en `data-service` mediante el `ChaosEngine` oficial.
-* **Resultados y MTTD:**
-  - **MTTD Verificado:** **77.37 segundos** (cumple el objetivo $< 2\text{ minutos}$).
-  - **Degradación de SLO:** Error rate interno de 9.82% en `data-service`, mientras que la política de reintentos de Istio mitigó el impacto al cliente final a 0.095%.
-  - **Error Budget:** Tasa de quema (*Burn Rate*) acelerada a 19.64x durante la ventana de caos.
-  - **Accionabilidad:** Alerta con severidad crítica, `trace_id` y enlace al runbook de mitigación ([`docs/runbooks/d2-data-service-errors.md`](docs/runbooks/d2-data-service-errors.md)).
+| Trazas | Métricas y alertas |
+|---|---|
+| ![Búsqueda de trazas en Jaeger](docs/screenshots/evidence_jaeger_search.png) | ![Panel operativo de Grafana](docs/screenshots/evidence_grafana_ops_dashboard.png) |
+| ![Detalle de una traza](docs/screenshots/evidence_jaeger_trace_detail.png) | ![Reglas de Prometheus](docs/screenshots/evidence_prometheus_rules.png) |
+| ![Interfaz de Jaeger](docs/screenshots/jaeger-ui.png) | ![Dashboard SLI](docs/screenshots/evidence_grafana_sli_dashboard.png) |
 
----
+| Fuentes de seguridad en SCC | Hallazgos activos filtrados |
+|---|---|
+| ![GKE Security Posture con resultados de seguridad](docs/screenshots/evidence_scc_sources.png) | ![Security Command Center sin hallazgos activos](docs/screenshots/evidence_scc_findings.png) |
 
-## 📈 4. Autoevaluación contra el Blueprint y Roadmap a 3 Meses
+## Despliegue y comprobación
 
-| Documento | Enlace | Contenido Principal |
-|---|---|---|
-| **Autoevaluación Blueprint (8 Dominios)** | [`docs/AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md`](docs/AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md) | Calificación de **4.16 / 5.0 (Nivel 4: Cuantitativamente Gestionado)** detallando fortalezas y gaps en los 8 dominios. |
-| **Roadmap de Mejora a 3 Meses** | [`docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md`](docs/ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md) | Plan de trabajo por sprints a 90 días para alcanzar el **Nivel 5 (4.76 / 5.0)** (Prometheus Exemplars, Kiali, Continuous Profiling eBPF y Canary Deployments verificados por SLO). |
-| **Guía de Despliegue y Prompts para IA** | [`docs/GUIA_COLABORACION_IA.md`](docs/GUIA_COLABORACION_IA.md) | Secuencia paso a paso de despliegue desde cero en GCP y prompts listos para copiar y pegar. |
-
----
-
-## 📂 5. Estructura Completa del Repositorio
-
-```text
-otel-lab/
-├── services/                                 # Código fuente de microservicios
-│   ├── service-a/                            # API Gateway / Orquestador (FastAPI + OTel SDK)
-│   ├── service-b/                            # Catálogo de Inventario (FastAPI + OTel SDK)
-│   ├── data-service/                         # Acceso a datos PostgreSQL + AIOps + Chaos Engine
-│   └── cve-exporter/                         # Exportador de métricas de seguridad y CVEs
-│
-├── infrastructure/                           # Infraestructura como Código (IaC) con Terraform
-│   ├── gcp/                                  # VPC, GKE Regional, Cloud SQL y Artifact Registry
-│   └── gcp-modulo-c/                         # VPC Flow Logs, Security Command Center y Dashboards
-│
-├── helm/                                     # Charts de orquestación Kubernetes
-│   ├── otel-stack/                           # OTel Collector, Jaeger, Prometheus y Grafana
-│   ├── service-a/                            # Despliegue de Service A
-│   ├── service-b/                            # Despliegue de Service B
-│   └── data-service/                         # Despliegue de Data Service (+ simulador RDS)
-│
-├── mesh/                                     # Service Mesh (Istio) — Observabilidad de Red L7
-│   ├── istio-operator.yaml                   # Control plane Istio con exportador OTLP
-│   ├── peer-authentication.yaml              # Cifrado mTLS STRICT mesh-wide
-│   └── telemetry.yaml                        # Muestreo de trazas L7 y access logging Envoy
-│
-├── chaos/                                    # Suite formal de Chaos Engineering en Sandbox
-│   ├── experiments/                          # Experimentos D1 (latencia) y D2 (errores 500)
-│   ├── load/                                 # Scripts de prueba de carga con k6
-│   ├── analysis/                             # Scripts de cálculo de SLO y quema de Error Budget
-│   └── observability/                        # Reglas de alerta de Prometheus para degradación
-│
-├── docs/                                     # Documentación formal y entregables
-│   ├── AUTOEVALUACION_OBSERVABILITY_BLUEPRINT.md # Autoevaluación 8 dominios (Escala 1-5)
-│   ├── ROADMAP_MEJORA_OBSERVABILIDAD_3_MESES.md  # Plan de evolución a 90 días (Hacia Nivel 5)
-│   ├── GUIA_COLABORACION_IA.md               # Guía paso a paso y prompts para IA
-│   ├── INFORME_TECNICO.pdf                   # Informe técnico formal del proyecto (PDF)
-│   ├── runbooks/                             # Procedimientos operativos de mitigación
-│   └── evidencias/                           # Registros formales de corridas de caos
-│
-├── grafana/                                  # Dashboards declarativos JSON y configuración
-├── benchmark/                                # Scripts comparativos de overhead con k6
-└── README.md                                 # Documentación principal consolidada
-```
-
----
-
-## 🧪 6. Validación de Transacción en Vivo
-
-Prueba ejecutada contra la IP pública del balanceador de carga en GCP:
+Requiere `gcloud`, `kubectl`, Helm, Terraform y acceso al proyecto GCP.
 
 ```powershell
-curl http://35.193.118.242:8000/process/1
+gcloud container clusters get-credentials dev-otel-cluster --region us-central1 --project project-546ee9f1-20e7-4368-919
+kubectl get pods -n services
+kubectl get pods -n observability
+kubectl get svc -n services
+kubectl get svc -n observability
 ```
 
-**Respuesta HTTP 200 con `trace_id` correlacionado:**
-```json
-{
-  "order_id": 2,
-  "item": {
-    "id": 1,
-    "name": "Producto-01",
-    "description": "Articulo de demostracion numero 1",
-    "price": 9.99,
-    "availability": "low_stock",
-    "stock_quantity": 4,
-    "enriched": true,
-    "cache_hit": true,
-    "total_with_tax": 11.89
-  },
-  "status": "completed",
-  "processing_time_ms": 429.14,
-  "trace_id": "81edaabede3a4f8e6c4f63f362fe01a1"
-}
+La infraestructura GCP se define en [infrastructure/gcp](infrastructure/gcp). Los charts se aplican de forma idempotente:
+
+```powershell
+helm upgrade --install otel-stack ./helm/otel-stack -n observability --create-namespace
+helm upgrade --install data-service ./helm/data-service -n services --create-namespace
+helm upgrade --install service-a ./helm/service-a -n services
+helm upgrade --install service-b ./helm/service-b -n services
 ```
-*(Puedes inspeccionar esta traza en vivo en Jaeger UI: `http://34.134.141.14:16686/trace/81edaabede3a4f8e6c4f63f362fe01a1`).*
+
+Para generar tráfico:
+
+```powershell
+k6 run benchmark/k6-instrumented.js
+```
+
+## Seguridad y control de tráfico
+
+### Cloud Service Mesh
+
+Cloud Service Mesh gestionado está activo con implementación `TRAFFIC_DIRECTOR`; su control plane reporta `REVISION_READY` y el data plane está `ACTIVE`. El namespace `services` usa `istio-injection=enabled`, por lo que los pods de los tres servicios ejecutan el contenedor de aplicación y `istio-proxy`.
+
+La política raíz `PeerAuthentication` establece mTLS `STRICT`. La única excepción es el puerto público `8000` de `service-a`, requerido para recibir HTTP del LoadBalancer; no debilita el tráfico interno. Se validó `GET /process/1` desde el LoadBalancer con respuesta `200`: Envoy registró el salto `service-a -> service-b` hacia `10.48.4.18:8001` mediante el cluster `outbound|8001||service-b.services.svc.cluster.local`. Los manifiestos de [mesh](mesh) también aplican telemetría `stackdriver`, access logging y las políticas L7 de `data-service`.
+
+### Security Command Center
+
+La API `securitycenter.googleapis.com` está incluida en [infrastructure/gcp/main.tf](infrastructure/gcp/main.tf) y habilitada en el proyecto. SCC consulta fuentes y hallazgos en la organización `797643117080`, no solo en el proyecto. La cuenta `pabloandresmelo1981@gmail.com` tiene `roles/securitycenter.admin` en la organización y SCC Standard está activo. La consulta directa a la API v2 en `global` respondió `HTTP 200` sin hallazgos activos.
+
+El rol organizacional requerido ya se asignó; para una instalación reproducible, la referencia es:
+
+```powershell
+gcloud organizations add-iam-policy-binding 797643117080 `
+  --member="user:pabloandresmelo1981@gmail.com" `
+  --role="roles/securitycenter.admin"
+```
+
+Si solo se necesita consultar evidencia, `roles/securitycenter.viewer` es suficiente y aplica el principio de mínimo privilegio. Valida el acceso con la API v2:
+
+```powershell
+$token = gcloud auth print-access-token
+curl.exe -sS -H "Authorization: Bearer $token" -H 'x-goog-user-project: project-546ee9f1-20e7-4368-919' `
+  'https://securitycenter.googleapis.com/v2/organizations/797643117080/sources/-/locations/global/findings?pageSize=20'
+```
+
+`roles/owner` en el proyecto no puede sustituir esta asignación: la activación y el rol son organizacionales.
+
+## Estructura del repositorio
+
+```text
+services/              Servicios FastAPI e instrumentación OTel
+helm/                  Charts de despliegue
+infrastructure/gcp/    Terraform para GKE, red, Cloud SQL y APIs
+otel-collector/        Configuración del Collector
+grafana/               Dashboards, datasource y reglas
+benchmark/             Pruebas k6 y simulación operativa
+mesh/                  Configuración aplicada de Cloud Service Mesh gestionado
+docs/screenshots/      Capturas técnicas versionadas
+```
+
+Los informes de entrega, guion de presentación, PDF y estado local de Terraform se mantienen bajo `nosubir/` y están excluidos por `.gitignore`; no forman parte del repositorio entregable.

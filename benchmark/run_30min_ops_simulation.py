@@ -93,10 +93,6 @@ def send_real_traffic_batch(req_id: int):
     http_post(f"{DATA_SERVICE_URL}/gcp/records", {"data": f"real_transaction_gcp_{req_id}_{int(time.time()*1000)}"})
     # 2. GET /gcp/records
     http_get(f"{DATA_SERVICE_URL}/gcp/records")
-    # 3. POST /aws/records
-    http_post(f"{DATA_SERVICE_URL}/aws/records", {"data": f"real_transaction_aws_{req_id}_{int(time.time()*1000)}"})
-    # 4. GET /records (federado)
-    http_get(f"{DATA_SERVICE_URL}/records")
 
 
 def run_epoch(epoch_num: int, epoch_duration_sec: float, speedup: float):

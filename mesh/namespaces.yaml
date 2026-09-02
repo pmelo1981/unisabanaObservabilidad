@@ -11,10 +11,3 @@ metadata:
   name: services
   labels:
     istio-injection: enabled
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: data-service
-  labels:
-    istio-injection: enabled

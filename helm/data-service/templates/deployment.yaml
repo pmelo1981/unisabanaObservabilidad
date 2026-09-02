@@ -12,8 +12,6 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
-      annotations:
-        sidecar.istio.io/inject: "true"
       labels:
         app.kubernetes.io/name: {{ include "data-service.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -30,11 +28,6 @@ spec:
                 secretKeyRef:
                   name: data-service-db-credentials
                   key: cloud_sql_dsn
-            - name: AWS_RDS_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: data-service-db-credentials
-                  key: aws_rds_dsn
             - name: OTEL_SERVICE_NAME
               value: "data-service"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -43,8 +36,11 @@ spec:
               value: {{ .Values.deploymentEnv | default "production" | quote }}
             - name: CLOUD_PROVIDER
               value: "gcp"
-            - name: CHAOS_CONTROL_ENABLED
-              value: {{ .Values.chaosControl.enabled | default false | quote }}
+            - name: SECURITY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: data-service-db-credentials
+                  key: security_api_key
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

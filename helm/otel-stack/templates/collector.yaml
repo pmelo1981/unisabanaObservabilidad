@@ -91,6 +91,7 @@ spec:
       labels:
         app: otel-collector
     spec:
+      serviceAccountName: otel-collector
       containers:
         - name: otel-collector
           image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
@@ -142,3 +143,11 @@ spec:
     - name: metrics-svc
       port: 8889
       targetPort: 8889
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: observability
+  annotations:
+    iam.gke.io/gcp-service-account: "otel-collector@{{ .Values.collector.env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"

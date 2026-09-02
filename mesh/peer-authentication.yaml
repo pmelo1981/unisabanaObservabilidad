@@ -3,7 +3,7 @@
 # una linea de codigo de las aplicaciones. Istio observa cada conexion a
 # nivel L7 independientemente de este ajuste; STRICT ademas asegura que no se
 # aceptan conexiones en texto plano dentro del mesh.
-apiVersion: security.istio.io/v1
+apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
   name: default
@@ -11,3 +11,22 @@ metadata:
 spec:
   mtls:
     mode: STRICT
+
+---
+# El LoadBalancer de service-a recibe clientes externos que no tienen sidecar.
+# La excepción se limita a su puerto público; el tráfico entre workloads sigue
+# autenticado y cifrado con mTLS.
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: service-a-public-ingress
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8000:
+      mode: PERMISSIVE

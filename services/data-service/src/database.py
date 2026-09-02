@@ -1,26 +1,4 @@
-"""
-Capa de acceso a datos — data-service.
-
-Mantiene DOS pools de conexion independientes, uno por backend de base de
-datos, para demostrar la arquitectura multi-cloud pedida en el enunciado:
-
-  - "gcp": PostgreSQL en GCP Cloud SQL (CLOUD_SQL_DSN)
-  - "aws": PostgreSQL equivalente a AWS RDS (AWS_RDS_DSN)
-
-Nota de despliegue: este entorno es exclusivamente GCP (sin cuenta AWS activa).
-El backend "aws" apunta, en este despliegue, a un Postgres corriendo dentro
-del mismo cluster GKE (ver helm/data-service/templates/rds-sim.yaml) que
-simula el rol de AWS RDS. El codigo es agnostico al proveedor real: si se
-dispone de una instancia AWS RDS real, basta con apuntar AWS_RDS_DSN a ella
-sin cambiar una linea de este modulo.
-
-AsyncPGInstrumentor (instrumentado en otel_setup/main) genera automaticamente
-los atributos base de OTel DB Semantic Conventions (db.system, db.statement,
-db.name, server.address, server.port) para cada query ejecutada sobre estos
-pools. db_span() añade encima los atributos que la auto-instrumentacion no
-puede inferir por si sola: db.operation, db.sql.table y cloud.provider, para
-poder distinguir en Jaeger que backend atendio cada operacion.
-"""
+"""Capa de acceso a Cloud SQL para data-service con atributos OTel de BD."""
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -45,7 +23,7 @@ CREATE TABLE IF NOT EXISTS records (
 class DbTarget:
     """Un backend de base de datos administrado (pool + metadatos para spans)."""
 
-    provider: str  # "gcp" | "aws"
+    provider: str
     dsn: str
     pool: Optional[asyncpg.Pool] = None
 
@@ -62,7 +40,7 @@ class DbTarget:
         return (urlparse(self.dsn).path or "/").lstrip("/") or "unknown"
 
     async def connect(self) -> None:
-        self.pool = await asyncpg.create_pool(self.dsn, min_size=1, max_size=5)
+        self.pool = await asyncpg.create_pool(self.dsn, min_size=1, max_size=5, timeout=10)
         async with self.pool.acquire() as conn:
             await conn.execute(CREATE_TABLE_SQL)
         log.info(
@@ -76,7 +54,7 @@ class DbTarget:
 
 
 class DbRegistry:
-    """Registro de los backends de DB disponibles (gcp obligatorio, aws opcional)."""
+    """Registro del backend de datos disponible."""
 
     def __init__(self) -> None:
         self.targets: dict[str, DbTarget] = {}
@@ -86,8 +64,15 @@ class DbRegistry:
             self.targets[provider] = DbTarget(provider=provider, dsn=dsn)
 
     async def connect_all(self) -> None:
-        for target in self.targets.values():
-            await target.connect()
+        for provider, target in list(self.targets.items()):
+            try:
+                await target.connect()
+            except (asyncpg.PostgresError, OSError, TimeoutError) as exc:
+                self.targets.pop(provider)
+                log.warning(
+                    "Backend de base de datos no disponible durante el arranque",
+                    extra={"provider": provider, "host": target.host, "error": str(exc)},
+                )
 
     async def close_all(self) -> None:
         for target in self.targets.values():
@@ -107,7 +92,7 @@ def db_span(tracer: Tracer, target: DbTarget, operation: str, table: str = "reco
     """
     Context manager que abre un span hijo con atributos OTel DB Semantic
     Conventions que complementan a AsyncPGInstrumentor: db.operation,
-    db.sql.table y cloud.provider (para diferenciar GCP vs AWS en Jaeger).
+    db.sql.table y cloud.provider.
     """
 
     @asynccontextmanager

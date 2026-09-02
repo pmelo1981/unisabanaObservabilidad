@@ -5,7 +5,7 @@
 # ── GKE Cluster ───────────────────────────────────────────────────────────────
 resource "google_container_cluster" "otel_cluster" {
   name     = "${var.environment}-otel-cluster"
-  location = var.region   # regional cluster (multi-zone, HA)
+  location = var.region # regional cluster (multi-zone, HA)
 
   # Requiere un node pool separado (buena practica)
   remove_default_node_pool = true
@@ -98,6 +98,11 @@ resource "google_service_account" "gke_nodes" {
   display_name = "GKE Nodes Service Account — OTel Lab"
 }
 
+resource "google_service_account" "otel_collector" {
+  account_id   = "otel-collector"
+  display_name = "OTel Collector Workload Identity"
+}
+
 resource "google_project_iam_member" "gke_nodes_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"
@@ -108,6 +113,18 @@ resource "google_project_iam_member" "gke_nodes_monitoring" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.gke_nodes.email}"
+}
+
+resource "google_project_iam_member" "otel_collector_monitoring" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.otel_collector.email}"
+}
+
+resource "google_service_account_iam_member" "otel_collector_workload_identity" {
+  service_account_id = google_service_account.otel_collector.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[observability/otel-collector]"
 }
 
 resource "google_project_iam_member" "gke_nodes_artifact_registry" {

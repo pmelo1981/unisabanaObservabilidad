@@ -4,10 +4,9 @@
 #
 # Servicios incluidos:
 #   - postgres         : Base de datos PostgreSQL compartida (service-a/b)
-#   - postgres-aws-sim : Postgres que simula el backend "AWS RDS" de data-service
 #   - service-b        : Microservicio B (catalogo de items)
 #   - service-a        : Microservicio A (orquestador de ordenes)
-#   - data-service     : Microservicio de datos multi-cloud (GCP Cloud SQL + AWS RDS)
+#   - data-service     : Microservicio de datos conectado a PostgreSQL
 #   - otel-collector   : OpenTelemetry Collector (OTLP → Jaeger / Prometheus)
 #   - jaeger         : Backend de trazas + UI en http://localhost:16686
 #   - prometheus     : Backend de metricas en http://localhost:9090
@@ -94,25 +93,7 @@ services:
       - otel-net
     restart: unless-stopped
 
-  # ── Base de datos "AWS RDS" (simulada localmente para data-service) ──────
-  postgres-aws-sim:
-    image: postgres:16-alpine
-    container_name: otel-postgres-aws-sim
-    environment:
-      POSTGRES_DB: labdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_aws_sim_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d labdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - otel-net
-
-  # ── Service Data (tercer microservicio: GCP Cloud SQL + AWS RDS) ─────────
+  # ── Service Data ─────────────────────────────────────────────────────────
   data-service:
     build:
       context: ./services/data-service
@@ -123,15 +104,12 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SDK_DISABLED: "false"
       CLOUD_SQL_DSN: postgresql://postgres:postgres@postgres:5432/labdb
-      AWS_RDS_DSN: postgresql://postgres:postgres@postgres-aws-sim:5432/labdb
       DEPLOYMENT_ENV: local
       CLOUD_PROVIDER: gcp
     ports:
       - "18080:8080"
     depends_on:
       postgres:
-        condition: service_healthy
-      postgres-aws-sim:
         condition: service_healthy
       otel-collector:
         condition: service_started
@@ -218,8 +196,6 @@ services:
 # ── Volumenes ──────────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
-    driver: local
-  postgres_aws_sim_data:
     driver: local
   grafana_data:
     driver: local

@@ -79,6 +79,7 @@ def setup_telemetry(db_engine=None) -> None:
     resource = Resource.create({
         "service.name": SERVICE_NAME_VAL,
         "service.version": os.getenv("SERVICE_VERSION", "1.0.0"),
+        "service.instance.id": os.getenv("POD_NAME", os.getenv("HOSTNAME", SERVICE_NAME_VAL)),
         "cloud.provider": os.getenv("CLOUD_PROVIDER", "local"),
         "deployment.environment": os.getenv("DEPLOYMENT_ENV", "development"),
     })

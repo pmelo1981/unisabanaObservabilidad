@@ -1,11 +1,6 @@
-"""
-data-service — tercer microservicio: acceso a datos multi-cloud.
-================================================================
-Acceso dual a bases de datos PostgreSQL (GCP Cloud SQL + AWS RDS simulado),
-integrado con OpenTelemetry SDK completo, motor de Chaos Engineering en caliente
-y detector de anomalias/avalancha de alertas operativas.
-"""
+"""data-service: acceso a Cloud SQL con OTel, caos y deteccion de anomalias."""
 import asyncio
+import secrets
 import logging
 import os
 import time
@@ -37,24 +32,35 @@ meter = get_meter()
 
 db_registry = DbRegistry()
 db_registry.register("gcp", os.getenv("CLOUD_SQL_DSN"))
-db_registry.register("aws", os.getenv("AWS_RDS_DSN"))
 
 # ── Metricas de negocio OTel ───────────────────────────────────────────────
 records_created = meter.create_counter(
     name="data_service.records.created",
-    description="Total de registros creados, por proveedor de base de datos",
+    description="Total de registros creados en Cloud SQL",
     unit="1",
 )
 db_query_duration = meter.create_histogram(
     name="data_service.db.query.duration",
-    description="Duracion de operaciones de base de datos por proveedor",
+    description="Duracion de operaciones de base de datos en Cloud SQL",
     unit="ms",
 )
 db_errors = meter.create_counter(
     name="data_service.db.errors",
-    description="Errores de base de datos por proveedor",
+    description="Errores de base de datos en Cloud SQL",
     unit="1",
 )
+authentication_attempts = meter.create_counter(
+    name="security.authentication.attempts",
+    description="Intentos de autenticacion al endpoint protegido de seguridad",
+    unit="1",
+)
+network_requests = meter.create_counter(
+    name="security.network.requests",
+    description="Solicitudes observadas por direccion de trafico",
+    unit="1",
+)
+
+TRUSTED_SERVICE_SOURCES = {"service-a", "service-b"}
 
 
 @asynccontextmanager
@@ -70,7 +76,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Data Service",
-    description="Acceso multi-cloud a datos con OTel SDK, Chaos Engineering y Anomaly Detection",
+    description="Acceso a Cloud SQL con OTel SDK, Chaos Engineering y Anomaly Detection",
     version="0.4.0",
     lifespan=lifespan,
 )
@@ -115,10 +121,14 @@ async def anomaly_tracking_middleware(request: Request, call_next):
         span_id_hex = format(ctx.span_id, "016x") if ctx and ctx.is_valid else ""
 
         path = request.url.path
-        provider = "gcp" if "/gcp" in path else ("aws" if "/aws" in path else "multi-cloud")
+        provider = "gcp"
 
         # Registrar UNICAMENTE peticiones reales de datos
-        if not path.startswith("/chaos") and not path.startswith("/anomalies") and not path.startswith("/alerts") and not path.startswith("/docs") and not path.startswith("/openapi"):
+        is_observability_endpoint = path.startswith(("/chaos", "/anomalies", "/alerts", "/security", "/docs", "/openapi"))
+        if not is_observability_endpoint:
+            source_service = request.headers.get("x-source-service", "").lower()
+            traffic_direction = "east_west" if source_service in TRUSTED_SERVICE_SOURCES else "north_south"
+            network_requests.add(1, {"traffic_direction": traffic_direction, "route": path})
             detector.record_request(
                 duration_ms=duration_ms,
                 is_error=is_error,
@@ -209,7 +219,7 @@ async def _create_record(provider: str, payload: RecordCreate) -> Record:
 @app.get("/health", response_model=HealthResponse, tags=["Infraestructura"])
 async def health():
     backends = {}
-    for provider in ("gcp", "aws"):
+    for provider in ("gcp",):
         if provider not in db_registry.available_providers():
             backends[provider] = "not_configured"
             continue
@@ -234,26 +244,25 @@ async def create_gcp_record(payload: RecordCreate):
     return await _create_record("gcp", payload)
 
 
-@app.get("/aws/records", response_model=list[Record], tags=["AWS RDS"])
-async def list_aws_records():
-    """Registros desde el backend AWS RDS."""
-    return await _list_records("aws")
+# ── Señales de seguridad ──────────────────────────────────────────────────
+@app.post("/security/auth/validate", tags=["Seguridad"])
+async def validate_service_authentication(request: Request):
+    """Valida una clave de servicio y emite una señal de autenticación auditable."""
+    configured_key = os.getenv("SECURITY_API_KEY", "")
+    supplied_key = request.headers.get("x-api-key", "")
 
+    if not configured_key:
+        authentication_attempts.add(1, {"outcome": "rejected", "reason": "not_configured"})
+        log.error("Autenticacion rechazada: SECURITY_API_KEY no configurada")
+        raise HTTPException(status_code=503, detail="Security authentication is not configured")
 
-@app.post("/aws/records", response_model=Record, tags=["AWS RDS"])
-async def create_aws_record(payload: RecordCreate):
-    return await _create_record("aws", payload)
+    if not supplied_key or not secrets.compare_digest(supplied_key, configured_key):
+        authentication_attempts.add(1, {"outcome": "rejected", "reason": "invalid_api_key"})
+        log.warning("Intento de autenticacion rechazado", extra={"reason": "invalid_api_key"})
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
-
-@app.get("/records", tags=["Federado"])
-async def list_federated_records():
-    """Vista federada: consulta ambos backends dentro de la misma traza."""
-    with tracer.start_as_current_span("federated_records_query") as span:
-        span.set_attribute("app.providers_queried", db_registry.available_providers())
-        result = {}
-        for provider in db_registry.available_providers():
-            result[provider] = await _list_records(provider)
-        return result
+    authentication_attempts.add(1, {"outcome": "accepted", "reason": "valid_api_key"})
+    return {"authenticated": True, "service": "data-service"}
 
 
 # ── Endpoints de Chaos Engineering ─────────────────────────────────────────

@@ -58,8 +58,5 @@ Thumbs.db
 docs/*.docx
 docs/*.html
 
-# Terraform (local)
-**/.terraform/
-
-# Herramientas locales (Modulo D)
-.tools/
+# Local workspace artifacts
+nosubir/

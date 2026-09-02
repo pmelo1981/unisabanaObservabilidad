@@ -21,7 +21,7 @@ collector:
   configMapName: "otel-collector-config"
 
   env:
-    GCP_PROJECT_ID: ""  # Rellenar con project ID
+    GCP_PROJECT_ID: "project-546ee9f1-20e7-4368-919"
     GCP_REGION: "us-central1"
 
   googleCloud:
@@ -97,6 +97,10 @@ prometheus:
                 description: "Más del 5 % del tráfico a data-service terminó en 5xx."
                 runbook_url: "docs/runbooks/d2-data-service-errors.md"
   server:
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+      scrape_timeout: 4s
     retention: "7d"
     resources:
       requests:
@@ -115,11 +119,54 @@ prometheus:
     - job_name: 'otel-collector-internal'
       static_configs:
         - targets: ['otel-collector.observability.svc.cluster.local:8888']
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: service_b_chaos_alerts
+          interval: 5s
+          rules:
+            - alert: ServiceBLatencySLOViolation
+              expr: >-
+                histogram_quantile(0.99,
+                  sum(rate(item_enrichment_duration_milliseconds_bucket{service_name="service-b"}[30s])) by (le)
+                ) > 200
+              for: 5s
+              labels:
+                severity: critical
+                service: service-b
+                experiment: chaos-latency-200ms
+              annotations:
+                summary: "service-b p99 exceeds the 200 ms SLO"
+                description: "The service-b p99 enrichment latency has exceeded 200 ms for more than 5 seconds."
+            - alert: SuspiciousAuthenticationFailures
+              expr: >-
+                sum(increase(security_authentication_attempts_total{outcome="rejected"}[1m])) > 3
+              for: 1m
+              labels:
+                severity: warning
+                service: data-service
+                signal: authentication
+              annotations:
+                summary: "Repeated rejected authentication attempts"
+                description: "data-service observed more than three rejected API-key attempts per minute."
+            - alert: UnexpectedEastWestTrafficBurst
+              expr: >-
+                sum(rate(security_network_requests_total{traffic_direction="east_west"}[1m])) > 0.5
+              for: 1m
+              labels:
+                severity: warning
+                service: data-service
+                signal: network
+              annotations:
+                summary: "Unexpected east-west traffic burst"
+                description: "data-service received more than 30 east-west requests per minute for one minute."
 
 # ── Grafana ────────────────────────────────────────────────────────────────────
 grafana:
   enabled: true
   adminPassword: "admin"
+  service:
+    type: LoadBalancer
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -142,3 +189,4 @@ grafana:
             path: /var/lib/grafana/dashboards/otel-lab
   dashboardsConfigMaps:
     otel-lab: "grafana-dashboards"
+    security-observability: "security-observability-dashboard"

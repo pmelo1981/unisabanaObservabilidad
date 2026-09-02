@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-observability-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  security-observability.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "Golden Signals de Seguridad basadas en telemetria real de data-service e Istio.",
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "id": 1,
+          "title": "Intentos de Autenticacion Rechazados / min",
+          "description": "Intentos rechazados por la validacion de X-API-Key en data-service.",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 3 }, { "color": "red", "value": 10 } ] },
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [ { "expr": "sum(rate(security_authentication_attempts_total{outcome=\"rejected\"}[1m])) * 60 or vector(0)", "legendFormat": "Rechazados", "refId": "A" } ]
+        },
+        {
+          "id": 2,
+          "title": "Alerta de Autenticacion",
+          "description": "Estado de la regla SuspiciousAuthenticationFailures.",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [ { "type": "value", "options": { "0": { "text": "Normal", "color": "green" }, "1": { "text": "Alerta", "color": "red" } } } ],
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [ { "expr": "max(ALERTS{alertname=\"SuspiciousAuthenticationFailures\",alertstate=\"firing\"}) or vector(0)", "refId": "A" } ]
+        },
+        {
+          "id": 3,
+          "title": "Trafico Norte-Sur y Este-Oeste / min",
+          "description": "Norte-sur: solicitudes sin origen de servicio permitido. Este-oeste: X-Source-Service de service-a o service-b.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 2 }, "unit": "ops" }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "expr": "sum(rate(security_network_requests_total[1m])) by (traffic_direction) * 60", "legendFormat": "{{ "{{traffic_direction}}" }}", "refId": "A" } ]
+        },
+        {
+          "id": 4,
+          "title": "Alerta de Trafico Este-Oeste",
+          "description": "Estado de la regla UnexpectedEastWestTrafficBurst.",
+          "type": "stat",
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [ { "type": "value", "options": { "0": { "text": "Normal", "color": "green" }, "1": { "text": "Alerta", "color": "orange" } } } ],
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [ { "expr": "max(ALERTS{alertname=\"UnexpectedEastWestTrafficBurst\",alertstate=\"firing\"}) or vector(0)", "refId": "A" } ]
+        },
+        {
+          "id": 5,
+          "title": "CVEs Activos (Security Command Center)",
+          "description": "SCC no esta disponible para este proyecto sin una organizacion de Google Cloud; este panel se habilita al conectar esa fuente.",
+          "type": "text",
+          "gridPos": { "h": 5, "w": 12, "x": 6, "y": 8 },
+          "options": { "content": "<div style=\"padding:16px\"><strong>Fuente pendiente: Security Command Center</strong><br/>No se muestra un conteo de CVEs hasta habilitar SCC para evitar presentar datos inexistentes como cero.</div>", "mode": "html" }
+        },
+        {
+          "id": 6,
+          "title": "Intentos de Autenticacion por Resultado",
+          "description": "Serie temporal de intentos aceptados y rechazados por la validacion de API key.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "bars", "fillOpacity": 35, "lineWidth": 1 }, "unit": "ops" }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "expr": "sum(rate(security_authentication_attempts_total[1m])) by (outcome) * 60", "legendFormat": "{{ "{{outcome}}" }}", "refId": "A" } ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": ["security", "golden-signals", "module-c"],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Golden Signals de Seguridad",
+      "uid": "security-golden-signals",
+      "version": 1
+    }
